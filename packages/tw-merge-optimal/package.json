@@ -1,0 +1,19 @@
+{
+    "name": "tw-merge-optimal",
+    "version": "0.2.0",
+    "description": "Build-time Tailwind class-merge generator — bundler plugins (Vite, webpack/Rspack/Rsbuild, Babel) around the twm-gen binary",
+    "type": "module",
+    "main": "./index.mjs",
+    "exports": {
+        ".": "./index.mjs",
+        "./vite": "./vite.mjs",
+        "./webpack": "./webpack.mjs",
+        "./babel": "./babel.mjs",
+        "./cli": "./cli.mjs",
+        "./generated.mjs": "./generated.mjs"
+    },
+    "files": ["index.mjs", "cli.mjs", "vite.mjs", "webpack.mjs", "babel.mjs"],
+    "engines": { "node": ">=18" },
+    "license": "MIT",
+    "keywords": ["tailwindcss", "tailwind", "tw-merge", "twmerge", "vite", "webpack", "babel", "rspack", "rsbuild"]
+}
