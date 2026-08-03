@@ -12,10 +12,16 @@
 //! value. `--spacing` is the spacing scale (any number, `px`, arbitrary
 //! value or variable) exactly like tailwind-merge's `spacing` theme scale.
 
-use crate::families::{prop_family, utility_override, ARBITRARY_PROPERTY_PREFIX};
+use crate::families::{prop_family, utility_override};
 use crate::theme::Theme;
 use crate::values::*;
 use std::collections::HashMap;
+
+/// Synthetic utility name for arbitrary-property resolution
+/// (`[prop:value]`): none of `prop_family`'s utility-prefix guards
+/// (ring-, text-, shadow-, touch-pan-, mask-...) match it, so the plain
+/// property mapping applies.
+const ARBITRARY_UTILITY: &str = "arbitrary-property";
 
 #[derive(Debug, Clone)]
 pub struct DesignSystem {
@@ -205,7 +211,11 @@ impl DesignSystem {
     /// Resolve a base class name (negative prefix, important marker and
     /// postfix already stripped) into the generated properties.
     pub fn resolve(&self, base: &str) -> Option<Resolved> {
-        // Arbitrary property: `[prop:value]` -> family per property name.
+        // Arbitrary property: `[prop:value]` -> the family of the CSS
+        // property it writes, so `[padding:1rem]` conflicts with `p-4`
+        // (deviation from tailwind-merge, which keeps them separate because
+        // its config has no property knowledge). Unknown properties get a
+        // unique per-property family, so they only conflict with themselves.
         if base.starts_with('[') && base.ends_with(']') && base[1..base.len() - 1].contains(':') {
             let content = &base[1..base.len() - 1];
             let colon = content.find(':').unwrap();
@@ -213,7 +223,7 @@ impl DesignSystem {
             if prop.is_empty() {
                 return None;
             }
-            let family = format!("{ARBITRARY_PROPERTY_PREFIX}{prop}");
+            let family = prop_family(prop, ARBITRARY_UTILITY).to_string();
             return Some(Resolved {
                 family: family.clone(),
                 prop_families: vec![family],

@@ -97,6 +97,10 @@ pub struct PatternTable {
     pub keywords: Vec<String>,
     /// Deduplicated theme-key sets (code = TH_OFFSET + index).
     pub theme_sets: Vec<Vec<String>>,
+    /// CSS property -> family id, for arbitrary-property classes
+    /// (`[padding:1rem]` -> `p`) so they merge with the standard classes
+    /// they write (deviation from tailwind-merge).
+    pub prop_family: Vec<(String, u16)>,
     pub leading: Option<u16>,
     pub font_size: Option<u16>,
     pub container_type: Option<u16>,
@@ -228,6 +232,32 @@ impl PatternTable {
         // table's postfix entries map to the same id.
         family_id("container-named", &mut family_names, &mut family_ids);
 
+        // Property -> family, for arbitrary-property classes. Resolved with a
+        // synthetic utility name so none of prop_family's utility-prefix
+        // guards apply (`[box-shadow:...]` -> `shadow`, `[color:...]` ->
+        // `color`, `[padding:...]` -> `p`).
+        let mut prop_family: Vec<(String, u16)> = Vec::new();
+        let mut prop_ids: HashMap<String, u16> = HashMap::new();
+        let mut all_props: Vec<String> = Vec::new();
+        for u in &ds.utilities {
+            for alt in u.1 {
+                for (prop, _) in &alt.props {
+                    if !prop_ids.contains_key(prop) {
+                        prop_ids.insert(prop.clone(), 0);
+                        all_props.push(prop.clone());
+                    }
+                }
+            }
+        }
+        all_props.sort();
+        for prop in all_props {
+            let fam = crate::families::prop_family(&prop, "arbitrary-property");
+            let id = family_id(&fam, &mut family_names, &mut family_ids);
+            prop_ids.insert(prop, id);
+        }
+        prop_family.extend(prop_ids.into_iter());
+        prop_family.sort_by(|a, b| a.0.cmp(&b.0));
+
         let leading = family_names
             .iter()
             .position(|f| f == "leading")
@@ -250,6 +280,7 @@ impl PatternTable {
             utilities,
             keywords,
             theme_sets,
+            prop_family,
             leading,
             font_size,
             container_type,
@@ -284,6 +315,23 @@ impl PatternTable {
         if let (Some(cn), Some(ct)) = (self.container_named, self.container_type) {
             if !out[cn as usize].contains(&ct) {
                 out[cn as usize].push(ct);
+            }
+        }
+        // Arbitrary-property families (PR) have no utility alternatives, so
+        // their directed edges are only applied here.
+        for (_, f) in &self.prop_family {
+            let f = *f as usize;
+            for edge in conflict_edges(&self.family_names[f]) {
+                if let Some(id) = self
+                    .family_names
+                    .iter()
+                    .position(|n| n == edge)
+                    .map(|i| i as u16)
+                {
+                    if !out[f].contains(&id) {
+                        out[f].push(id);
+                    }
+                }
             }
         }
         for set in &mut out {

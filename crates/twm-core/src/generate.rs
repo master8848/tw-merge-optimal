@@ -117,6 +117,20 @@ pub fn generate_js(
         }
         js.push_str("];\n");
 
+        // PR: CSS property -> family id, for arbitrary-property classes
+        // (`[padding:1rem]` -> `p`). Prototype-less object: fast `in` check
+        // in the matcher.
+        js.push_str("const PR=Object.assign(Object.create(null),{");
+        for (i, (prop, id)) in p.prop_family.iter().enumerate() {
+            if i > 0 {
+                js.push(',');
+            }
+            js.push_str(&js_key(prop));
+            js.push(':');
+            js.push_str(&id.to_string());
+        }
+        js.push_str("});\n");
+
         // W2: deduplicated conflict sets (wid = index).
         js.push_str("const W2=[");
         for (i, set) in p.conflict_sets.iter().enumerate() {
@@ -414,9 +428,10 @@ fn validators_js() -> String {
 
 /// Patterns-mode matcher: lazy theme-set/keyword helpers plus `m(v)`, which
 /// resolves an unseen class against the pattern table and returns
-/// `[family, conflicts]` or 0.
+/// `[family, conflicts]` or 0. Arbitrary properties resolve via the PR
+/// property->family table so they merge with the standard classes they write.
 const PATTERN_MATCH_JS: &str = r#"
-const THS=[];function th(i){return THS[i]||(THS[i]=new Set(TH[i].split(',')))}let K;function kws(){if(K===undefined)K=KW.split(',');return K}function cn(v){return v.startsWith('@container')&&((v[10]==='/'&&v[11])||(v[11]==='s'&&v[16]&&v.slice(10).startsWith('-size/'))||(v[11]==='n'&&v[18]&&v.slice(10).startsWith('-normal/')))}function m(v){if(v[0]==='['&&v[v.length-1]===']'){const x=v.slice(1,-1),c=x.indexOf(':');if(c>0){const k='arbitrary..'+x.slice(0,c);let f=FN.indexOf(k);return f<0?[k,[k]]:[f,[f]]}}if(v[0]==='-')v=v.slice(1);for(let i=0;i<P.length;){const n=P[i++],w=P[i++],f=P[i++],wid=P[i++],g=P[i++];if(!(w?v.length>n.length&&v.startsWith(n):v===n)){for(let j=0;j<g;j++){const c2=P[i++];i+=c2}continue}const val=w?v.slice(n.length):'';let ok=1;for(let j=0;j<g;j++){const c2=P[i++];let a=0;for(let k=0;k<c2;k++){const s=P[i++];a=a||(s>=5000?th(s-5000).has(val):s>=4000?kws()[s-4000]===val:s&&VT(s,val))}if(!a){ok=0;break}}if(ok)return [f,W2[wid]]}return 0}
+const THS=[];function th(i){return THS[i]||(THS[i]=new Set(TH[i].split(',')))}let K;function kws(){if(K===undefined)K=KW.split(',');return K}function cn(v){return v.startsWith('@container')&&((v[10]==='/'&&v[11])||(v[11]==='s'&&v[16]&&v.slice(10).startsWith('-size/'))||(v[11]==='n'&&v[18]&&v.slice(10).startsWith('-normal/')))}function m(v){if(v[0]==='['&&v[v.length-1]===']'){const x=v.slice(1,-1),c=x.indexOf(':');if(c>0){const p=x.slice(0,c);if(p&&PR[p]!==undefined){const f=PR[p];return[f,W[f]]}const k='arbitrary..'+p;let f=FN.indexOf(k);return f<0?[k,[k]]:[f,[f]]}}if(v[0]==='-')v=v.slice(1);for(let i=0;i<P.length;){const n=P[i++],w=P[i++],f=P[i++],wid=P[i++],g=P[i++];if(!(w?v.length>n.length&&v.startsWith(n):v===n)){for(let j=0;j<g;j++){const c2=P[i++];i+=c2}continue}const val=w?v.slice(n.length):'';let ok=1;for(let j=0;j<g;j++){const c2=P[i++];let a=0;for(let k=0;k<c2;k++){const s=P[i++];a=a||(s>=5000?th(s-5000).has(val):s>=4000?kws()[s-4000]===val:s&&VT(s,val))}if(!a){ok=0;break}}if(ok)return [f,W2[wid]]}return 0}
 "#;
 
 #[cfg(test)]

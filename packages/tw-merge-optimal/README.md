@@ -189,6 +189,7 @@ All plugins accept the same options object:
 | `sources` / `include` | `string[]` | `['src/**', 'app/**', 'pages/**', 'components/**']` (ts/tsx/js/jsx/vue/svelte/astro/html/css) | Files, directories or globs to scan for class usage. Absolute paths are used as-is; relative paths resolve against the current working directory. |
 | `css` | `string` | — | Extra `@utility` / `@theme` CSS extending the design system. |
 | `prefix` | `string` | — | Only treat classes with the `p:` prefix as Tailwind classes (`--prefix`). |
+| `patterns` | `boolean` | `true` | Embed the full design-system pattern table so classes the scanner missed still resolve at runtime. `false` emits only the scanned classes (`--no-patterns`) for the smallest bundle. |
 | `check` | `boolean` | `false` | Report conflicts among used classes; the build fails if any exist (CI gate). |
 | `outFile` | `string` | `./.tw-merge-optimal/generated.mjs` | Where file-based plugins (webpack/Rspack/Rsbuild/Next/Babel) write the bundle. Relative to cwd. Vite/Bun serve the bundle in-memory and ignore it. |
 

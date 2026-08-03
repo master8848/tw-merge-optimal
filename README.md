@@ -6,8 +6,9 @@
 
 **Status: v0.1 — test project pushing the limits of speed & optimization.** Scans your
 project with `tailwindcss-oxide`, derives conflict groups from the actual CSS your utilities
-generate, and generates a tiny dependency-free `twMerge`/`twJoin` module containing only the
-classes your project uses — so runtime merge is O(1) table lookups on a few-KB bundle.
+generate, and generates a dependency-free `twMerge`/`twJoin` module with the full
+design-system pattern table (default) — so scanned classes merge via O(1) table lookups
+with whole-call result caching, and classes the scanner missed still resolve at runtime.
 
 ## Credits & Attribution
 
@@ -35,11 +36,13 @@ The vendored `vendor/tailwindcss/theme.css` is copied from tailwindcss v4 (MIT).
    override table in `families.rs` for known Tailwind special cases (shadow vs ring vs
    text-shadow, filter kinds, gradient stops, `size-*` {width,height}, `line-clamp`,
    scrollbar thumb vs track, font-variant-numeric kinds, `border` bare = border-width, …).
-4. **Generate** — emit a dependency-free ESM module: used classes → class→family table +
-   family→conflicts table + feature-flagged runtime helpers (important flag / postfix /
-   arbitrary fallbacks only when the project actually needs them). `twJoin` always ships.
-   At runtime `twMerge` is a right-to-left loop with O(1) table lookups — no Tailwind
-   parser, no config, no WASM.
+4. **Generate** — emit a dependency-free ESM module: used classes → class→family
+   table + family→conflicts table + the design system's full pattern table (so unseen
+   classes still resolve — default) + feature-flagged runtime helpers (important flag /
+   postfix / arbitrary fallbacks only when the project actually needs them). `twJoin`
+   always ships. At runtime `twMerge` is a right-to-left loop with O(1) table lookups,
+   whole-call result caching, and a pattern fallback for classes the scanner missed —
+   no Tailwind parser, no config, no WASM.
 
 The merge semantics are a faithful port of tailwind-merge `merge-classlist.ts`:
 right-to-left, last class wins; the conflict key is
@@ -56,12 +59,15 @@ untouched.
 ```
 twm-gen v0.1 — build-time Tailwind class-merge generator
 
-usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--check] <globs-or-paths...>
+usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--no-patterns] [--check] <globs-or-paths...>
 
 options:
   --css <file>    extra @utility/@theme CSS to extend the design system
   --out <file>    write the generated JS bundle to <file> (default: stdout)
   --prefix <p>    only treat classes with the `p:` prefix as Tailwind classes
+  --no-patterns   emit only the scanned classes (smaller bundle; classes the
+                  scanner missed pass through unmerged — default is full
+                  pattern-table resolution, so unseen classes still merge)
   --check         report conflicts among used classes; exit 1 if any exist
   -h, --help      show this help
 ```
@@ -69,6 +75,12 @@ options:
 Arguments are files, directories (recursively walked for source extensions) or globs.
 Candidates are extracted with `tailwindcss-oxide` (`pre_process_input` by extension +
 `Extractor`), so they match what your Tailwind build would see.
+
+Pattern resolution is **on by default**: the bundle embeds the whole design
+system's grammar (utility names, value specs, theme sets), so classes the
+scanner never saw — runtime-composed strings, CMS content, arbitrary values —
+still resolve like tailwind-merge would. `--no-patterns` trades that safety
+net for the smallest possible bundle.
 
 ### Examples
 
@@ -121,15 +133,18 @@ Measured raw and gzipped (Node zlib, same run as the benchmarks below):
 | Artifact | Raw | gzip |
 |---|---|---|
 | tailwind-merge `dist/bundle-mjs.mjs` (full default config + API) | 103.1 KB | 17.4 KB |
-| tw-merge-optimal benchmark bundle (951 classes, 256 families) | 18.9 KB | 6.5 KB |
-| tw-merge-optimal corpus-union bundle (637 classes) | 14.7 KB | — |
-| tw-merge-optimal small sample (96 classes) | 3.2 KB | — |
+| tw-merge-optimal benchmark bundle (patterns default, 951 classes) | 57.7 KB | 15.7 KB |
+| tw-merge-optimal corpus-union patterns bundle (349 cases) | 59.9 KB | — |
+| tw-merge-optimal corpus-union exact bundle (`--no-patterns`) | 15.4 KB | — |
+| tw-merge-optimal small sample exact (93 classes) | 3.2 KB | — |
 
-The generated bundle contains only the classes a project uses, plus a compact
-runtime (~2.1 KB fixed, dependency-free ESM): a class→family table, a
-family→conflicts table, and feature-flagged helpers that ship only when the
-project needs them. Budgets enforced by tests: corpus union < 20 KB, small
-sample < 4 KB.
+The default bundle ships the **full design-system pattern table** (utility
+names, value specs, theme sets — the whole grammar, independent of project
+size), so classes the scanner missed still resolve at runtime; `--no-patterns`
+emits only the scanned classes plus a compact runtime (~2.1 KB fixed,
+dependency-free ESM) with class→family (`G`) and family→conflicts (`W`)
+tables and feature-flagged helpers. Budgets enforced by tests: exact corpus
+union < 20 KB, patterns corpus union < 64 KB, small sample < 4 KB.
 
 The bundle is **pure browser-ready ESM** — no Node APIs, no `process`,
 `Buffer`, WASM, or imports of any kind. Drop it into a `<script type="module">`
@@ -149,40 +164,36 @@ measures ops/s (higher = better):
 
 | Workload | tailwind-merge | tw-merge-optimal | ratio |
 |---|---|---|---|
-| init (`extendTailwindMerge` / none needed) | 3,737 ops/s | 544,000 ops/s | **145×** |
-| simple (2 classes) | 3,578 ops/s | 430,000 ops/s | **120×** |
-| heavy (real-world 10-arg call) | 3,491 ops/s | 137,000 ops/s | **39×** |
-| ultra-long list (2,400 classes, cache off) | 1,042 ops/s | 4,130 ops/s | **4.0×** |
-| collection ×1,322 (cache off) | 101 ops/s | 216 ops/s | **2.1×** |
-| collection ×1,322 (with result cache) | 654 ops/s | 216 ops/s | 0.33× |
-| corpus 335 cases (short repeated inputs) | 58,818 ops/s | 4,900 ops/s | 0.08× |
+| init (`extendTailwindMerge` / none needed) | 2,225 ops/s | 443,931 ops/s | **200×** |
+| simple (2 classes) | 2,905 ops/s | 389,493 ops/s | **134×** |
+| heavy (real-world 10-arg call) | 2,434 ops/s | 266,718 ops/s | **110×** |
+| ultra-long list (2,400 classes, cache off) | 617 ops/s | 9,545 ops/s | **15.5×** |
+| collection ×1,322 (cache off) | 72.6 ops/s | 970 ops/s | **13.4×** |
+| collection ×1,322 (with result cache) | 441 ops/s | 970 ops/s | **2.2×** |
+| corpus 349 cases (short repeated inputs) | 33,533 ops/s | 35,277 ops/s | **1.05×** |
 
 Notes, for fairness:
 
 - tailwind-merge's own benchmark convention constructs a fresh
   `extendTailwindMerge({})` instance inside every measured call, so its
-  simple/heavy/init numbers include config + parser construction (~0.35 ms
+  simple/heavy/init numbers include config + parser construction (~0.45 ms
   each). tw-merge-optimal has no init step — importing the module *is* the
   init, and the init row just calls `twMerge()`.
-- The last two rows are tailwind-merge's best case: short class lists with
-  heavily repeated tokens, where its trie-based parser and (opt-in) result
-  cache are extremely V8-friendly. tw-merge-optimal wins everywhere real-world
-  calls are shaped — long lists, many conflicts, modifiers — and in the
-  collection workload it beats tailwind-merge with its cache *off* (the fair
-  no-cache comparison) by 2.1×.
+- The corpus and collection rows are tailwind-merge's best case: short class
+  lists with heavily repeated tokens, where its trie-based parser and opt-in
+  result cache are extremely V8-friendly. tw-merge-optimal's result cache is
+  **always on** (no opt-in), so it now wins even there: 1.05× on the corpus
+  (the row it previously lost 12×) and 2.2× over tailwind-merge *with* its
+  cache on the collection workload.
 - Bench runs on this machine vary by ±20–30% run to run (even for
-  tailwind-merge itself); the corpus row above is the mean of alternating
-  A/B runs where tw-merge-optimal measured 4,770–4,996 ops/s against
-  tailwind-merge's 58,378–60,224. The old split-based runtime measured
-  4,450–4,613 in the same alternating runs, so the short-input fast path
-  is a real win there, not a regression.
-- Heap deltas per run (lower is better): init 1.26 MB vs 0.20 MB, heavy
-  1.02 MB vs 0.47 MB, ultra-long 1.50 MB vs 0.24 MB, corpus 1.32 MB vs
-  0.45 MB.
+  tailwind-merge itself); all numbers above are from a single same-process
+  run so the ratios are directly comparable.
+- Heap per workload (lower is better): ultra-long 243 KB vs 1.47 MB, corpus
+  502 KB vs 1.27 MB.
 
 Parity: every benchmarked input produces byte-identical output in both
 implementations — the `corpus` bench throws on any mismatch, and
-`bench/verify.mjs` re-checks all 335 cases with a rotated loop (guarding
+`bench/verify.mjs` re-checks all cases with a rotated loop (guarding
 against V8 constant-folding, a classic benchmark trap).
 
 ```sh
@@ -228,12 +239,21 @@ node bench/verify.mjs
   tailwind-merge's `cachedParseClassName`; class names repeat heavily in real
   renders. The memo is **bounded at 8,192 entries** and cleared when
   exceeded, capping memory on long-lived apps with dynamic class strings.
+- **Whole-call result cache** (`RC`): `twMerge` results are memoized per input
+  string — always on, bounded at 8,192 entries like `PC`. React renders repeat
+  identical class strings constantly, so repeated calls collapse to a single
+  `Map.get` (tailwind-merge's opt-in cache, without the opt-in).
+- **Pattern fallback by default**: the bundle embeds the design system's full
+  grammar (utility names, value specs, theme sets, property→family table).
+  Classes the scanner missed resolve at runtime via the `m()` matcher — the
+  O(1) `G` table stays the hot path, patterns only run on miss.
 - Conflict tracking uses a **plain array + `includes`** instead of a `Set` —
   faster for the tiny per-family conflict lists (tailwind-merge's benchmarked
   `mergeClassList` does the same).
 - Modifier sorting is order-sensitive with anchor variants (`*`, `before`,
   `selection`, …) and never allocates unless modifiers are present.
-- Minified single-line ESM: ~2.1 KB fixed runtime + ~16 B per class.
+- Minified single-line ESM: ~2.2 KB fixed runtime (+ pattern tables when
+  patterns mode is on) + ~16 B per class.
 
 ## Tests
 
@@ -249,19 +269,22 @@ node bench/verify.mjs
   (isArbitraryLength, isArbitraryNumber, isArbitraryColor, isFraction, isInteger,
   isNumber, isPercent, isTshirtSize, isArbitraryShadow, isArbitraryVariable*,
   isNamedContainerQuery, …), 25 groups — all green.
-- `crates/twm-core/tests/js_parity.rs` — generates the JS bundle from the corpus union,
-  runs all 335 cases in Node (v24), asserts 0 failures and both size budgets.
+- `crates/twm-core/tests/js_parity.rs` — generates **both** bundles (exact and
+  patterns) from the corpus union, runs all cases in Node (v24), asserts 0
+  failures and the size budgets.
 - `bench/` — the head-to-head benchmark vs tailwind-merge (ported from its own
   `tw-merge.benchmark.ts` suite) with bundle-size, gzip-size, heap and ops/s
   measurements; see [Performance](#performance).
 - Corpus strategy: the conflict table is built from the **union of all corpus input +
   expected classes**. If a corpus class cannot be resolved, the missing utility is added
   to `crates/twm-core/assets/test-extension.css` (same `@utility` syntax) and the suite
-  is re-run — that file is included in `default_design_system()`.
+  is re-run — that file is included in `default_design_system()`. The corpus also
+  includes `deviation_arbitrary_property_merging` — cases where tw-merge-optimal
+  deliberately differs from tailwind-merge (see below).
 
 ```sh
 cargo build
-cargo test                      # 18 lib + 56 corpus + 1 js-parity + 25 validators
+cargo test                      # 20 lib + 57 corpus + 1 js-parity + 25 validators + 1 patterns
 cargo test -- --include-ignored # + the 2 documented known-deviation placeholders
 ```
 
@@ -271,8 +294,18 @@ cargo test -- --include-ignored # + the 2 documented known-deviation placeholder
   (create/extend-tailwind-merge, merge-configs, theme, experimental-parse-class-name,
   default-config, class-map, lazy-initialization, type-generics, public-api) are
   intentionally not ported; prefix support is exposed as a `tw_merge(..., Some("tw"))`
-  argument instead of `extendTailwindMerge`. Two `#[ignore]`d placeholder tests
-  (`known_deviation_*`) document this.
+  argument instead of `extendTailwindMerge`. Custom design-system extensions go through
+  `--css` (`@utility`/`@theme` syntax) instead — the same place you must declare them
+  for Tailwind itself to generate them, so no separate merge config is needed. Two
+  `#[ignore]`d placeholder tests (`known_deviation_*`) document this.
+- **Arbitrary properties merge with the standard classes they write.**
+  `[padding:1rem]` maps to the `p` family, `[color:blue]` to `color`,
+  `[background-color:red]` to `bg-color`, so they conflict with `p-4`,
+  `text-red-500`, `bg-red-500` and vice versa. tailwind-merge keeps
+  `p-4 [padding:1rem]` as-is because its config has no CSS property knowledge;
+  ours is derived from the catalog (`families.rs` `prop_family`), so this
+  documented limitation is solved here. Verified by
+  `deviation_arbitrary_property_merging` (14 cases, both bundles).
 - The catalog is authored, condensed and curated for the corpus, not a verbatim copy of
   tailwindcss's utilities; exotic utilities outside the corpus may not resolve (they
   then pass through untouched, like unknown classes — the safe direction).
@@ -283,10 +316,17 @@ cargo test -- --include-ignored # + the 2 documented known-deviation placeholder
 ## Limitations (v0.1)
 
 - The generated JS bundle is per-project: add a new class to your sources and re-run
-  `twm-gen`. There is no on-the-fly fallback to a full parser.
+  `twm-gen`. With patterns mode (default) classes the scanner missed still resolve at
+  runtime; only `--no-patterns` bundles have no fallback. Dynamic classes that follow
+  no design-system pattern (undeclared custom classes) pass through unmerged in both
+  modes — the safe direction.
 - Only the default design system ships; custom `@utility` rules require `--css`.
 - `twJoin` accepts strings and nested arrays; Rust-side falsy-value semantics follow
   the ported corpus (`JoinValue`).
+- Inherited tailwind-merge limitations that are inherent to Tailwind's syntax:
+  ambiguous unlabeled arbitrary values (`font-(--x)` defaults to font-weight),
+  arbitrary-variant equivalence (`[&:focus]` vs `focus:`), and custom classes that
+  deliberately shadow Tailwind patterns without being declared anywhere.
 
 ## Build-time plugins
 

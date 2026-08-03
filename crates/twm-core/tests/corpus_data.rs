@@ -378,6 +378,30 @@ pub const FILES: &[CorpusFile] = &[
         ],
     },
     CorpusFile {
+        name: "deviation_arbitrary_property_merging",
+        cases: &[
+        // DELIBERATE deviation from tailwind-merge: arbitrary properties map
+        // to the family of the CSS property they write, so they merge with
+        // the standard classes that conflict with that property
+        // (tailwind-merge keeps `p-4 [padding:1rem]` as-is — its config has
+        // no CSS property knowledge; ours is derived from the catalog).
+        ("p-4 [padding:1rem]", "[padding:1rem]"),
+        ("[padding:1rem] p-4", "p-4"),
+        ("pl-4 [padding-inline:1rem]", "[padding-inline:1rem]"),
+        ("[padding-inline:1rem] pl-4", "[padding-inline:1rem] pl-4"),
+        ("text-red-500 [color:blue]", "[color:blue]"),
+        ("[color:blue] text-red-500", "text-red-500"),
+        ("bg-red-500 [background-color:blue]", "[background-color:blue]"),
+        ("[background-color:blue] bg-red-500", "bg-red-500"),
+        ("[top:0] inset-1", "inset-1"),
+        ("inset-1 [top:0]", "inset-1 [top:0]"),
+        ("shadow-md [box-shadow:0_0_0_1px_red]", "[box-shadow:0_0_0_1px_red]"),
+        ("ring-2 [box-shadow:0_0_0_1px_red]", "ring-2 [box-shadow:0_0_0_1px_red]"),
+        ("[opacity:0.5] opacity-0", "opacity-0"),
+        ("opacity-100 [opacity:0.5]", "[opacity:0.5]"),
+        ],
+    },
+    CorpusFile {
         name: "tailwind_css_v3_3_features",
         cases: &[
         ("text-red text-lg/7 text-lg/8", "text-red text-lg/8"),

@@ -437,6 +437,17 @@ pub fn prop_family(prop: &str, utility: &str) -> Cow<'static, str> {
 pub fn conflict_edges(family: &str) -> &'static [&'static str] {
     match family {
         "container-named" => &["container-type"],
+        // Arbitrary `[color:...]` writes the same property as the color
+        // utilities; only reachable from arbitrary-property classes (no
+        // standard utility maps to the bare `color` family).
+        "color" => &[
+            "text-color",
+            "decoration-color",
+            "shadow-color",
+            "ring-color",
+            "inset-ring-color",
+            "outline-color",
+        ],
         "overflow" => &["overflow-x", "overflow-y"],
         "overscroll" => &["overscroll-x", "overscroll-y"],
         "inset" => &[
@@ -552,6 +563,11 @@ pub fn conflict_edges(family: &str) -> &'static [&'static str] {
         "touch-x" => &["touch"],
         "touch-y" => &["touch"],
         "touch-pz" => &["touch"],
+        // Arbitrary `[color:...]` (family `color`) merges with the color
+        // writers in both orders; families here are only reachable from
+        // arbitrary-property classes, so no standard behavior changes.
+        "text-color" | "decoration-color" | "shadow-color" | "ring-color"
+        | "inset-ring-color" | "outline-color" => &["color"],
         _ => &[],
     }
 }
