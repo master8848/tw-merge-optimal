@@ -1,0 +1,616 @@
+/*
+ * builtin-utilities.css — v0.1 utility catalog, authored in Tailwind CSS v4 `@utility` syntax.
+ *
+ * Modeled on the built-in utilities shipped by Tailwind CSS v4
+ * (tailwindlabs/tailwindcss, MIT). It is a condensed starter catalog, NOT a
+ * verbatim copy: functional utilities use `--value(...)` markers and are
+ * resolved against the `@theme` block in vendor/tailwindcss/theme.css.
+ *
+ * Marker semantics (same as Tailwind v4's `--value()` function):
+ *   --value(--theme-key-*)  -> expand every theme key with that prefix
+ *   --value(--theme-key)    -> single theme key (e.g. --spacing multiplier)
+ *   --value(<type>)         -> value of that type (see below)
+ *   --value(keyword)        -> literal keyword class suffix (e.g. auto, full)
+ *
+ * Type markers (documented in crates/twm-core/src/values.rs; the acceptance
+ * sets mirror tailwind-merge v3.6's group validators one-to-one):
+ *   Plain value types: <length> (a length with unit, math function or 0),
+ *   <number>, <integer>, <percentage>, <fraction>, <tshirt>, <position>,
+ *   <shadow>, <image>, <angle>, <time>, <ident>, <ratio> (fraction|number),
+ *   <any> (everything), <any-non-arbitrary>, <spacing> (px|number|arbitrary).
+ *   Arbitrary-value labels (bracket form): <a-length> [length], <a-number>
+ *   [number], <a-weight> [number|weight], <a-size> [length|size|bg-size],
+ *   <a-position> [position|percentage], <a-image> [image|url], <a-shadow>
+ *   [shadow], <a-family-name> [family-name], <a-any> any bracket value.
+ *   Arbitrary-variable labels (paren form): <v-*> same labels; <v-shadow>
+ *   and <v-weight> also match without a label.
+ *   `--value(<color>)` and bare type names are shorthand for `<color>`/`<type>`.
+ *
+ * Resolution semantics:
+ *   - A `@utility` rule is ONE resolution alternative: every `--value()`
+ *     marker in it must accept the candidate value, literal declarations
+ *     always apply. Duplicate utility names are alternatives tried in order.
+ *   - The first alternative that accepts the value wins; alternatives are
+ *     ordered to mirror tailwind-merge's validator order per class node.
+ *   - `--spacing` is the spacing scale (any number, `px`, arbitrary value or
+ *     variable), matching tailwind-merge's `spacing` theme scale.
+ *
+ * Spacing scale: since theme.css only defines `--spacing: 0.25rem`, the
+ * engine synthesizes the standard multiplier set:
+ *   0, px, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16,
+ *   20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 72, 80, 96
+ */
+
+/* ---------- display / visibility / position ---------- */
+@utility block { display: block; }
+@utility inline-block { display: inline-block; }
+@utility inline { display: inline; }
+@utility flex { display: flex; }
+@utility inline-flex { display: inline-flex; }
+@utility grid { display: grid; }
+@utility inline-grid { display: inline-grid; }
+@utility table { display: table; }
+@utility inline-table { display: inline-table; }
+@utility table-caption { display: table-caption; }
+@utility table-cell { display: table-cell; }
+@utility table-column { display: table-column; }
+@utility table-column-group { display: table-column-group; }
+@utility table-footer-group { display: table-footer-group; }
+@utility table-header-group { display: table-header-group; }
+@utility table-row-group { display: table-row-group; }
+@utility table-row { display: table-row; }
+@utility flow-root { display: flow-root; }
+@utility contents { display: contents; }
+@utility hidden { display: none; }
+@utility list-item { display: list-item; }
+
+@utility static { position: static; }
+@utility fixed { position: fixed; }
+@utility absolute { position: absolute; }
+@utility relative { position: relative; }
+@utility sticky { position: sticky; }
+
+@utility visible { visibility: visible; }
+@utility invisible { visibility: invisible; }
+@utility collapse { visibility: collapse; }
+
+@utility isolate { isolation: isolate; }
+@utility isolation-auto { isolation: auto; }
+@utility box-border { box-sizing: border-box; }
+@utility box-content { box-sizing: content-box; }
+
+@utility float-start { float: inline-start; }
+@utility float-end { float: inline-end; }
+@utility float-left { float: left; }
+@utility float-right { float: right; }
+@utility float-none { float: none; }
+@utility clear-start { clear: inline-start; }
+@utility clear-end { clear: inline-end; }
+@utility clear-left { clear: left; }
+@utility clear-right { clear: right; }
+@utility clear-both { clear: both; }
+@utility clear-none { clear: none; }
+
+@utility sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
+@utility not-sr-only { position: static; width: auto; height: auto; padding: 0; margin: 0; overflow: visible; clip: auto; white-space: normal; }
+
+@utility object-contain { object-fit: contain; }
+@utility object-cover { object-fit: cover; }
+@utility object-fill { object-fit: fill; }
+@utility object-none { object-fit: none; }
+@utility object-scale-down { object-fit: scale-down; }
+@utility object-position-* { object-position: --value(<position>, <a-any>, <v-any>, top, bottom, left, right, center, top-left, left-top, top-right, right-top, bottom-right, right-bottom, bottom-left, left-bottom); }
+
+/* ---------- box sizing ---------- */
+@utility w-* { width: --value(--container-*, <spacing>, <fraction>, screen, auto, full, dvw, dvh, lvw, lvh, svw, svh, min, max, fit); }
+@utility h-* { height: --value(<spacing>, <fraction>, screen, lh, auto, full, dvw, dvh, lvw, lvh, svw, svh, min, max, fit); }
+@utility size-* { width: --value(<spacing>, <fraction>, auto, full, dvw, dvh, lvw, lvh, svw, svh, min, max, fit); height: --value(<spacing>, <fraction>, auto, full, dvw, dvh, lvw, lvh, svw, svh, min, max, fit); }
+@utility min-w-* { min-width: --value(--container-*, <spacing>, <fraction>, screen, none, auto, full, dvw, dvh, lvw, lvh, svw, svh, min, max, fit); }
+@utility min-h-* { min-height: --value(<spacing>, <fraction>, screen, lh, none, auto, full, dvw, dvh, lvw, lvh, svw, svh, min, max, fit); }
+@utility max-w-* { max-width: --value(--container-*, <spacing>, <fraction>, screen, none, prose, auto, full, dvw, dvh, lvw, lvh, svw, svh, min, max, fit); }
+@utility max-h-* { max-height: --value(<spacing>, <fraction>, screen, lh, auto, full, dvw, dvh, lvw, lvh, svw, svh, min, max, fit); }
+@utility aspect-* { aspect-ratio: --value(--aspect-*, <fraction>, <a-any>, <v-any>, auto, square); }
+
+/* ---------- spacing ---------- */
+@utility m-* { margin: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility mx-* { margin-inline: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility my-* { margin-block: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility ms-* { margin-inline-start: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility me-* { margin-inline-end: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility mt-* { margin-top: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility mr-* { margin-right: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility mb-* { margin-bottom: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility ml-* { margin-left: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility p-* { padding: --value(<spacing>, <a-any>, <v-any>); }
+@utility px-* { padding-inline: --value(<spacing>, <a-any>, <v-any>); }
+@utility py-* { padding-block: --value(<spacing>, <a-any>, <v-any>); }
+@utility ps-* { padding-inline-start: --value(<spacing>, <a-any>, <v-any>); }
+@utility pe-* { padding-inline-end: --value(<spacing>, <a-any>, <v-any>); }
+@utility pt-* { padding-top: --value(<spacing>, <a-any>, <v-any>); }
+@utility pr-* { padding-right: --value(<spacing>, <a-any>, <v-any>); }
+@utility pb-* { padding-bottom: --value(<spacing>, <a-any>, <v-any>); }
+@utility pl-* { padding-left: --value(<spacing>, <a-any>, <v-any>); }
+@utility space-x-* { margin-inline-start: --value(<spacing>, <a-any>, <v-any>); }
+@utility space-y-* { margin-top: --value(<spacing>, <a-any>, <v-any>); }
+
+/* ---------- inset ---------- */
+@utility inset-* { inset: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility inset-x-* { inset-inline: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility inset-y-* { inset-block: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility inset-s-* { inset-inline-start: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility inset-e-* { inset-inline-end: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility inset-t-* { top: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility inset-r-* { right: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility inset-b-* { bottom: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility inset-l-* { left: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility start-* { inset-inline-start: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility end-* { inset-inline-end: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility top-* { top: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility right-* { right: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility bottom-* { bottom: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility left-* { left: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+
+/* ---------- z-index / order / flex / grid ---------- */
+@utility z-* { z-index: --value(<integer>, <a-any>, <v-any>, auto); }
+@utility order-* { order: --value(<integer>, <a-any>, <v-any>, first, last, none); }
+@utility flex-1 { flex: 1; }
+@utility flex-auto { flex: 1 1 auto; }
+@utility flex-initial { flex: 0 1 auto; }
+@utility flex-none { flex: none; }
+@utility flex-* { flex: --value(<number>, <fraction>, <a-any>, auto, initial, none); }
+@utility basis-* { flex-basis: --value(--container-*, <spacing>, <a-any>, <v-any>, <fraction>, full, auto); }
+@utility grow { flex-grow: 1; }
+@utility grow-* { flex-grow: --value(<number>, <a-any>, <v-any>); }
+@utility shrink { flex-shrink: 1; }
+@utility shrink-* { flex-shrink: --value(<number>, <a-any>, <v-any>); }
+@utility grid-cols-* { grid-template-columns: --value(<integer>, <a-any>, <v-any>, none, subgrid); }
+@utility grid-rows-* { grid-template-rows: --value(<integer>, <a-any>, <v-any>, none, subgrid); }
+@utility col-span-* { grid-column: --value(<integer>, <a-any>, <v-any>, full, auto); }
+@utility row-span-* { grid-row: --value(<integer>, <a-any>, <v-any>, full, auto); }
+@utility col-* { grid-column: --value(<integer>, <a-any>, <v-any>, auto, full); }
+@utility row-* { grid-row: --value(<integer>, <a-any>, <v-any>, auto, full); }
+@utility col-start-* { grid-column-start: --value(<integer>, <a-any>, <v-any>, auto); }
+@utility col-end-* { grid-column-end: --value(<integer>, <a-any>, <v-any>, auto); }
+@utility row-start-* { grid-row-start: --value(<integer>, <a-any>, <v-any>, auto); }
+@utility row-end-* { grid-row-end: --value(<integer>, <a-any>, <v-any>, auto); }
+@utility gap-* { gap: --value(<spacing>, <a-any>, <v-any>); }
+@utility gap-x-* { column-gap: --value(<spacing>, <a-any>, <v-any>); }
+@utility gap-y-* { row-gap: --value(<spacing>, <a-any>, <v-any>); }
+@utility columns-* { columns: --value(<number>, <a-any>, <v-any>, <tshirt>); }
+
+/* ---------- flexbox / grid alignment ---------- */
+@utility items-start { align-items: flex-start; }
+@utility items-end { align-items: flex-end; }
+@utility items-center { align-items: center; }
+@utility items-baseline { align-items: baseline; }
+@utility items-stretch { align-items: stretch; }
+@utility justify-normal { justify-content: normal; }
+@utility justify-start { justify-content: flex-start; }
+@utility justify-end { justify-content: flex-end; }
+@utility justify-center { justify-content: center; }
+@utility justify-between { justify-content: space-between; }
+@utility justify-around { justify-content: space-around; }
+@utility justify-evenly { justify-content: space-evenly; }
+@utility justify-stretch { justify-content: stretch; }
+@utility justify-items-start { justify-items: start; }
+@utility justify-items-end { justify-items: end; }
+@utility justify-items-center { justify-items: center; }
+@utility justify-items-stretch { justify-items: stretch; }
+@utility justify-items-normal { justify-items: normal; }
+@utility justify-self-auto { justify-self: auto; }
+@utility justify-self-start { justify-self: start; }
+@utility justify-self-end { justify-self: end; }
+@utility justify-self-center { justify-self: center; }
+@utility justify-self-stretch { justify-self: stretch; }
+@utility content-normal { align-content: normal; }
+@utility content-center { align-content: center; }
+@utility content-start { align-content: flex-start; }
+@utility content-end { align-content: flex-end; }
+@utility content-between { align-content: space-between; }
+@utility content-around { align-content: space-around; }
+@utility content-evenly { align-content: space-evenly; }
+@utility content-stretch { align-content: stretch; }
+@utility self-auto { align-self: auto; }
+@utility self-start { align-self: flex-start; }
+@utility self-end { align-self: flex-end; }
+@utility self-center { align-self: center; }
+@utility self-stretch { align-self: stretch; }
+@utility self-baseline { align-self: baseline; }
+@utility place-items-start { place-items: start; }
+@utility place-items-end { place-items: end; }
+@utility place-items-center { place-items: center; }
+@utility place-items-stretch { place-items: stretch; }
+@utility place-items-baseline { place-items: baseline; }
+@utility place-content-center { place-content: center; }
+@utility place-content-start { place-content: start; }
+@utility place-content-end { place-content: end; }
+@utility place-content-between { place-content: space-between; }
+@utility place-content-around { place-content: space-around; }
+@utility place-content-evenly { place-content: space-evenly; }
+@utility place-content-stretch { place-content: stretch; }
+@utility place-self-auto { place-self: auto; }
+@utility place-self-start { place-self: start; }
+@utility place-self-end { place-self: end; }
+@utility place-self-center { place-self: center; }
+@utility place-self-stretch { place-self: stretch; }
+
+/* ---------- background ---------- */
+@utility bg-none { background-image: none; }
+@utility bg-gradient-to-t { background-image: linear-gradient(to top, var(--tw-gradient-stops)); }
+@utility bg-gradient-to-tr { background-image: linear-gradient(to top right, var(--tw-gradient-stops)); }
+@utility bg-gradient-to-r { background-image: linear-gradient(to right, var(--tw-gradient-stops)); }
+@utility bg-gradient-to-br { background-image: linear-gradient(to bottom right, var(--tw-gradient-stops)); }
+@utility bg-gradient-to-b { background-image: linear-gradient(to bottom, var(--tw-gradient-stops)); }
+@utility bg-gradient-to-bl { background-image: linear-gradient(to bottom left, var(--tw-gradient-stops)); }
+@utility bg-gradient-to-l { background-image: linear-gradient(to left, var(--tw-gradient-stops)); }
+@utility bg-gradient-to-tl { background-image: linear-gradient(to top left, var(--tw-gradient-stops)); }
+@utility bg-* { background-position: --value(<position>, <a-position>, <v-position>, top, bottom, left, right, center, top-left, left-top, top-right, right-top, bottom-right, right-bottom, bottom-left, left-bottom); }
+@utility bg-* { background-repeat: --value(repeat, no-repeat, repeat-x, repeat-y, repeat-space, repeat-round); }
+@utility bg-* { background-size: --value(<a-size>, <v-size>, auto, cover, contain); }
+@utility bg-* { background-image: --value(<a-image>, <v-image>); }
+@utility bg-* { background-attachment: --value(fixed, local, scroll); }
+@utility bg-* { background-color: --value(<color>); }
+@utility bg-position-* { background-position: --value(<a-any>, <v-any>); }
+@utility bg-size-* { background-size: --value(<a-any>, <v-any>); }
+@utility bg-repeat { background-repeat: repeat; }
+@utility bg-repeat-x { background-repeat: repeat-x; }
+@utility bg-repeat-y { background-repeat: repeat-y; }
+@utility bg-clip-border { background-clip: border-box; }
+@utility bg-clip-padding { background-clip: padding-box; }
+@utility bg-clip-content { background-clip: content-box; }
+@utility bg-clip-text { background-clip: text; }
+@utility bg-origin-border { background-origin: border-box; }
+@utility bg-origin-padding { background-origin: padding-box; }
+@utility bg-origin-content { background-origin: content-box; }
+@utility bg-fixed { background-attachment: fixed; }
+@utility bg-local { background-attachment: local; }
+@utility bg-scroll { background-attachment: scroll; }
+@utility from-* { --tw-gradient-from-position: --value(<percentage>, <v-length>, <a-length>); }
+@utility from-* { --tw-gradient-from: --value(<color>); }
+@utility via-* { --tw-gradient-via-position: --value(<percentage>, <v-length>, <a-length>); }
+@utility via-* { --tw-gradient-via: --value(<color>); }
+@utility to-* { --tw-gradient-to-position: --value(<percentage>, <v-length>, <a-length>); }
+@utility to-* { --tw-gradient-to: --value(<color>); }
+
+/* ---------- typography ---------- */
+@utility font-thin { font-weight: 100; }
+@utility font-extralight { font-weight: 200; }
+@utility font-light { font-weight: 300; }
+@utility font-normal { font-weight: 400; }
+@utility font-medium { font-weight: 500; }
+@utility font-semibold { font-weight: 600; }
+@utility font-bold { font-weight: 700; }
+@utility font-extrabold { font-weight: 800; }
+@utility font-black { font-weight: 900; }
+@utility font-* { font-family: --value(--font-*, <a-family-name>, <v-family-name>, <any-non-arbitrary>); }
+@utility font-* { font-weight: --value(--font-weight-*, <a-weight>, <v-weight>); }
+@utility font-italic { font-style: italic; }
+@utility font-not-italic { font-style: normal; }
+@utility font-stretch-* { font-stretch: --value(<percentage>, <a-any>, ultra-condensed, extra-condensed, condensed, semi-condensed, normal, semi-expanded, expanded, extra-expanded, ultra-expanded); }
+@utility text-* { font-size: --value(--text-*, <tshirt>, <v-length>, <a-length>, base); }
+@utility text-* { text-align: --value(left, center, right, justify, start, end); }
+@utility text-* { color: --value(<color>); }
+@utility text-wrap { text-wrap: wrap; }
+@utility text-nowrap { text-wrap: nowrap; }
+@utility text-balance { text-wrap: balance; }
+@utility text-pretty { text-wrap: pretty; }
+@utility truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@utility text-ellipsis { text-overflow: ellipsis; }
+@utility text-clip { text-overflow: clip; }
+@utility uppercase { text-transform: uppercase; }
+@utility lowercase { text-transform: lowercase; }
+@utility capitalize { text-transform: capitalize; }
+@utility normal-case { text-transform: none; }
+@utility leading-* { line-height: --value(--leading-*, <spacing>, <a-any>, <v-any>); }
+@utility tracking-* { letter-spacing: --value(--tracking-*, <a-any>, <v-any>); }
+@utility indent-* { text-indent: --value(<spacing>, <a-any>, <v-any>); }
+@utility align-baseline { vertical-align: baseline; }
+@utility align-top { vertical-align: top; }
+@utility align-middle { vertical-align: middle; }
+@utility align-bottom { vertical-align: bottom; }
+@utility align-text-top { vertical-align: text-top; }
+@utility align-text-bottom { vertical-align: text-bottom; }
+@utility align-sub { vertical-align: sub; }
+@utility align-super { vertical-align: super; }
+@utility align-* { vertical-align: --value(<a-any>, <v-any>); }
+@utility list-image-* { list-style-image: --value(none, <a-any>, <v-any>); }
+@utility list-inside { list-style-position: inside; }
+@utility list-outside { list-style-position: outside; }
+@utility list-disc { list-style-type: disc; }
+@utility list-decimal { list-style-type: decimal; }
+@utility list-none { list-style-type: none; }
+@utility list-* { list-style-type: --value(<a-any>, <v-any>, disc, decimal, none); }
+@utility whitespace-normal { white-space: normal; }
+@utility whitespace-nowrap { white-space: nowrap; }
+@utility whitespace-pre { white-space: pre; }
+@utility whitespace-pre-line { white-space: pre-line; }
+@utility whitespace-pre-wrap { white-space: pre-wrap; }
+@utility whitespace-break-spaces { white-space: break-spaces; }
+@utility break-normal { overflow-wrap: normal; word-break: normal; }
+@utility break-words { overflow-wrap: break-word; }
+@utility break-all { word-break: break-all; }
+@utility break-keep { word-break: keep-all; }
+@utility wrap-break-word { text-wrap-style: break-word; }
+@utility wrap-anywhere { text-wrap-style: anywhere; }
+@utility wrap-normal { text-wrap-style: normal; }
+@utility hyphens-none { hyphens: none; }
+@utility hyphens-manual { hyphens: manual; }
+@utility hyphens-auto { hyphens: auto; }
+@utility content-* { content: --value(none, <a-any>, <v-any>); }
+@utility tab-* { tab-size: --value(<integer>, <a-any>, <v-any>); }
+@utility caption-top { caption-side: top; }
+@utility caption-bottom { caption-side: bottom; }
+
+/* ---------- text decoration ---------- */
+@utility underline { text-decoration-line: underline; }
+@utility overline { text-decoration-line: overline; }
+@utility line-through { text-decoration-line: line-through; }
+@utility no-underline { text-decoration-line: none; }
+@utility decoration-* { text-decoration-style: --value(solid, dashed, dotted, double, wavy); }
+@utility decoration-* { text-decoration-thickness: --value(<number>, <v-any>, <a-length>, from-font, auto); }
+@utility decoration-* { text-decoration-color: --value(<color>); }
+@utility underline-offset-* { text-underline-offset: --value(<number>, <a-any>, <v-any>, auto); }
+
+/* ---------- text shadow (v4.1) ---------- */
+@utility text-shadow { text-shadow: var(--text-shadow-sm); }
+@utility text-shadow-* { text-shadow: --value(--text-shadow-*, <tshirt>, <shadow>, <a-shadow>, <v-shadow>, none); }
+@utility text-shadow-* { text-shadow-color: --value(<color>); }
+
+/* ---------- border ---------- */
+@utility border { border-style: var(--tw-border-style); border-width: 1px; }
+@utility border-x { border-inline-width: 1px; }
+@utility border-y { border-block-width: 1px; }
+@utility border-s { border-inline-start-width: 1px; }
+@utility border-e { border-inline-end-width: 1px; }
+@utility border-t { border-top-width: 1px; }
+@utility border-r { border-right-width: 1px; }
+@utility border-b { border-bottom-width: 1px; }
+@utility border-l { border-left-width: 1px; }
+@utility border-* { border-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-x-* { border-inline-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-y-* { border-block-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-s-* { border-inline-start-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-e-* { border-inline-end-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-t-* { border-top-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-r-* { border-right-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-b-* { border-bottom-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-l-* { border-left-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-solid { border-style: solid; }
+@utility border-dashed { border-style: dashed; }
+@utility border-dotted { border-style: dotted; }
+@utility border-double { border-style: double; }
+@utility border-hidden { border-style: hidden; }
+@utility border-none { border-style: none; }
+@utility border-* { border-color: --value(<color>); }
+@utility border-x-* { border-inline-color: --value(<color>); }
+@utility border-y-* { border-block-color: --value(<color>); }
+@utility border-s-* { border-inline-start-color: --value(<color>); }
+@utility border-e-* { border-inline-end-color: --value(<color>); }
+@utility border-t-* { border-top-color: --value(<color>); }
+@utility border-r-* { border-right-color: --value(<color>); }
+@utility border-b-* { border-bottom-color: --value(<color>); }
+@utility border-l-* { border-left-color: --value(<color>); }
+@utility border-spacing-* { border-spacing: --value(<spacing>, <a-any>, <v-any>); }
+@utility border-collapse { border-collapse: collapse; }
+@utility border-separate { border-collapse: separate; }
+
+/* ---------- radius ---------- */
+@utility rounded { border-radius: 0.25rem; }
+@utility rounded-* { border-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-t-* { border-top-left-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); border-top-right-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-r-* { border-top-right-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); border-bottom-right-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-b-* { border-bottom-right-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); border-bottom-left-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-l-* { border-top-left-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); border-bottom-left-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-s-* { border-start-start-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); border-start-end-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-e-* { border-end-start-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); border-end-end-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-tl-* { border-top-left-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-tr-* { border-top-right-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-br-* { border-bottom-right-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-bl-* { border-bottom-left-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-ss-* { border-start-start-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-se-* { border-start-end-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-es-* { border-end-start-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-ee-* { border-end-end-radius: --value(--radius-*, <tshirt>, <a-any>, <v-any>, none, full); }
+@utility rounded-t { border-top-left-radius: 0.25rem; border-top-right-radius: 0.25rem; }
+@utility rounded-r { border-top-right-radius: 0.25rem; border-bottom-right-radius: 0.25rem; }
+@utility rounded-b { border-bottom-right-radius: 0.25rem; border-bottom-left-radius: 0.25rem; }
+@utility rounded-l { border-top-left-radius: 0.25rem; border-bottom-left-radius: 0.25rem; }
+@utility rounded-s { border-start-start-radius: 0.25rem; border-start-end-radius: 0.25rem; }
+@utility rounded-e { border-end-start-radius: 0.25rem; border-end-end-radius: 0.25rem; }
+@utility rounded-ss { border-start-start-radius: 0.25rem; }
+@utility rounded-se { border-start-end-radius: 0.25rem; }
+@utility rounded-es { border-end-start-radius: 0.25rem; }
+@utility rounded-ee { border-end-end-radius: 0.25rem; }
+@utility rounded-tl { border-top-left-radius: 0.25rem; }
+@utility rounded-tr { border-top-right-radius: 0.25rem; }
+@utility rounded-br { border-bottom-right-radius: 0.25rem; }
+@utility rounded-bl { border-bottom-left-radius: 0.25rem; }
+
+/* ---------- shadow / ring ---------- */
+@utility shadow { box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); }
+@utility shadow-* { box-shadow: --value(--shadow-*, <tshirt>, <shadow>, <a-shadow>, <v-shadow>, none); }
+@utility shadow-* { --tw-shadow-color: --value(<color>); }
+@utility ring { box-shadow: 0 0 0 3px rgb(0 0 0 / 0.1); }
+@utility ring-* { box-shadow: 0 0 0 calc(var(--tw-ring-width, 3px)) var(--tw-ring-color, rgb(0 0 0 / 0.1)); --tw-ring-width: --value(<number>, <v-length>, <a-length>); }
+@utility ring-inset { --tw-ring-inset: inset; }
+@utility ring-* { --tw-ring-color: --value(<color>); }
+@utility ring-offset-* { box-shadow: 0 0 0 var(--tw-ring-offset-width, 2px) var(--tw-ring-offset-color, #fff); --tw-ring-offset-width: --value(<number>, <a-length>); }
+@utility ring-offset-* { --tw-ring-offset-color: --value(<color>); }
+
+/* ---------- opacity / blend / filter ---------- */
+@utility opacity-* { opacity: --value(<number>, <a-any>, <v-any>); }
+@utility mix-blend-normal { mix-blend-mode: normal; }
+@utility mix-blend-multiply { mix-blend-mode: multiply; }
+@utility mix-blend-screen { mix-blend-mode: screen; }
+@utility mix-blend-overlay { mix-blend-mode: overlay; }
+@utility mix-blend-darken { mix-blend-mode: darken; }
+@utility mix-blend-lighten { mix-blend-mode: lighten; }
+@utility mix-blend-color-dodge { mix-blend-mode: color-dodge; }
+@utility mix-blend-color-burn { mix-blend-mode: color-burn; }
+@utility mix-blend-hard-light { mix-blend-mode: hard-light; }
+@utility mix-blend-soft-light { mix-blend-mode: soft-light; }
+@utility mix-blend-difference { mix-blend-mode: difference; }
+@utility mix-blend-exclusion { mix-blend-mode: exclusion; }
+@utility mix-blend-hue { mix-blend-mode: hue; }
+@utility mix-blend-saturation { mix-blend-mode: saturation; }
+@utility mix-blend-color { mix-blend-mode: color; }
+@utility mix-blend-luminosity { mix-blend-mode: luminosity; }
+@utility mix-blend-plus-lighter { mix-blend-mode: plus-lighter; }
+@utility mix-blend-plus-darker { mix-blend-mode: plus-darker; }
+@utility bg-blend-normal { background-blend-mode: normal; }
+@utility bg-blend-multiply { background-blend-mode: multiply; }
+@utility bg-blend-screen { background-blend-mode: screen; }
+@utility bg-blend-overlay { background-blend-mode: overlay; }
+@utility bg-blend-darken { background-blend-mode: darken; }
+@utility bg-blend-lighten { background-blend-mode: lighten; }
+@utility bg-blend-color-dodge { background-blend-mode: color-dodge; }
+@utility bg-blend-color-burn { background-blend-mode: color-burn; }
+@utility bg-blend-hard-light { background-blend-mode: hard-light; }
+@utility bg-blend-soft-light { background-blend-mode: soft-light; }
+@utility bg-blend-difference { background-blend-mode: difference; }
+@utility bg-blend-exclusion { background-blend-mode: exclusion; }
+@utility bg-blend-hue { background-blend-mode: hue; }
+@utility bg-blend-saturation { background-blend-mode: saturation; }
+@utility bg-blend-color { background-blend-mode: color; }
+@utility bg-blend-luminosity { background-blend-mode: luminosity; }
+@utility blur { filter: blur(8px); }
+@utility blur-* { filter: blur(--value(--blur-*, <a-any>, <v-any>, none)); }
+@utility brightness-* { filter: brightness(--value(<number>, <a-any>, <v-any>)); }
+@utility contrast-* { filter: contrast(--value(<number>, <a-any>, <v-any>)); }
+@utility grayscale { filter: grayscale(100%); }
+@utility grayscale-* { filter: grayscale(--value(<number>, <a-any>, <v-any>)); }
+@utility hue-rotate-* { filter: hue-rotate(--value(<number>, <a-any>, <v-any>)); }
+@utility invert { filter: invert(100%); }
+@utility invert-* { filter: invert(--value(<number>, <a-any>, <v-any>)); }
+@utility saturate-* { filter: saturate(--value(<number>, <a-any>, <v-any>)); }
+@utility sepia { filter: sepia(100%); }
+@utility sepia-* { filter: sepia(--value(<number>, <a-any>, <v-any>)); }
+@utility drop-shadow { filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)) drop-shadow(0 1px 1px rgb(0 0 0 / 0.06)); }
+@utility drop-shadow-* { filter: drop-shadow(--value(--drop-shadow-*, <shadow>, <a-shadow>, <v-shadow>, none)); }
+@utility drop-shadow-* { --tw-drop-shadow-color: --value(<color>); }
+@utility backdrop-blur { -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+@utility backdrop-blur-* { -webkit-backdrop-filter: blur(--value(--blur-*, <a-any>, <v-any>, none)); backdrop-filter: blur(--value(--blur-*, <a-any>, <v-any>, none)); }
+@utility backdrop-brightness-* { -webkit-backdrop-filter: brightness(--value(<number>, <a-any>, <v-any>)); backdrop-filter: brightness(--value(<number>, <a-any>, <v-any>)); }
+@utility backdrop-contrast-* { -webkit-backdrop-filter: contrast(--value(<number>, <a-any>, <v-any>)); backdrop-filter: contrast(--value(<number>, <a-any>, <v-any>)); }
+@utility backdrop-grayscale { -webkit-backdrop-filter: grayscale(100%); backdrop-filter: grayscale(100%); }
+@utility backdrop-grayscale-* { -webkit-backdrop-filter: grayscale(--value(<number>, <a-any>, <v-any>)); backdrop-filter: grayscale(--value(<number>, <a-any>, <v-any>)); }
+@utility backdrop-hue-rotate-* { -webkit-backdrop-filter: hue-rotate(--value(<number>, <a-any>, <v-any>)); backdrop-filter: hue-rotate(--value(<number>, <a-any>, <v-any>)); }
+@utility backdrop-invert { -webkit-backdrop-filter: invert(100%); backdrop-filter: invert(100%); }
+@utility backdrop-invert-* { -webkit-backdrop-filter: invert(--value(<number>, <a-any>, <v-any>)); backdrop-filter: invert(--value(<number>, <a-any>, <v-any>)); }
+@utility backdrop-opacity-* { -webkit-backdrop-filter: opacity(--value(<number>, <a-any>, <v-any>)); backdrop-filter: opacity(--value(<number>, <a-any>, <v-any>)); }
+@utility backdrop-saturate-* { -webkit-backdrop-filter: saturate(--value(<number>, <a-any>, <v-any>)); backdrop-filter: saturate(--value(<number>, <a-any>, <v-any>)); }
+@utility backdrop-sepia { -webkit-backdrop-filter: sepia(100%); backdrop-filter: sepia(100%); }
+@utility backdrop-sepia-* { -webkit-backdrop-filter: sepia(--value(<number>, <a-any>, <v-any>)); backdrop-filter: sepia(--value(<number>, <a-any>, <v-any>)); }
+
+/* ---------- outline ---------- */
+@utility outline { outline-style: solid; outline-width: 1px; }
+@utility outline-none { outline: 2px solid transparent; outline-offset: 2px; }
+@utility outline-* { outline-width: --value(<number>, <v-length>, <a-length>); }
+@utility outline-solid { outline-style: solid; }
+@utility outline-dashed { outline-style: dashed; }
+@utility outline-dotted { outline-style: dotted; }
+@utility outline-double { outline-style: double; }
+@utility outline-hidden { outline-style: hidden; }
+@utility outline-* { outline-color: --value(<color>); }
+@utility outline-offset-* { outline-offset: --value(<number>, <a-any>, <v-any>); }
+
+/* ---------- overflow / overscroll / touch ---------- */
+@utility overflow-auto { overflow: auto; }
+@utility overflow-hidden { overflow: hidden; }
+@utility overflow-clip { overflow: clip; }
+@utility overflow-visible { overflow: visible; }
+@utility overflow-scroll { overflow: scroll; }
+@utility overflow-x-auto { overflow-x: auto; }
+@utility overflow-x-hidden { overflow-x: hidden; }
+@utility overflow-x-clip { overflow-x: clip; }
+@utility overflow-x-visible { overflow-x: visible; }
+@utility overflow-x-scroll { overflow-x: scroll; }
+@utility overflow-y-auto { overflow-y: auto; }
+@utility overflow-y-hidden { overflow-y: hidden; }
+@utility overflow-y-clip { overflow-y: clip; }
+@utility overflow-y-visible { overflow-y: visible; }
+@utility overflow-y-scroll { overflow-y: scroll; }
+@utility overscroll-auto { overscroll-behavior: auto; }
+@utility overscroll-contain { overscroll-behavior: contain; }
+@utility overscroll-none { overscroll-behavior: none; }
+@utility overscroll-x-auto { overscroll-behavior-x: auto; }
+@utility overscroll-x-contain { overscroll-behavior-x: contain; }
+@utility overscroll-x-none { overscroll-behavior-x: none; }
+@utility overscroll-y-auto { overscroll-behavior-y: auto; }
+@utility overscroll-y-contain { overscroll-behavior-y: contain; }
+@utility overscroll-y-none { overscroll-behavior-y: none; }
+@utility touch-auto { touch-action: auto; }
+@utility touch-none { touch-action: none; }
+@utility touch-pan-x { touch-action: pan-x; }
+@utility touch-pan-y { touch-action: pan-y; }
+@utility touch-pan-left { touch-action: pan-left; }
+@utility touch-pan-right { touch-action: pan-right; }
+@utility touch-pan-up { touch-action: pan-up; }
+@utility touch-pan-down { touch-action: pan-down; }
+@utility touch-pinch-zoom { touch-action: pinch-zoom; }
+@utility touch-manipulation { touch-action: manipulation; }
+
+/* ---------- interaction ---------- */
+@utility accent-* { accent-color: --value(<color>); }
+@utility caret-* { caret-color: --value(<color>); }
+@utility cursor-* { cursor: --value(<any>, auto, default, pointer, wait, text, move, help, not-allowed, none, context-menu, progress, cell, crosshair, vertical-text, alias, copy, no-drop, grab, grabbing, all-scroll, col-resize, row-resize, n-resize, e-resize, s-resize, w-resize, ne-resize, nw-resize, se-resize, sw-resize, ew-resize, ns-resize, nesw-resize, nwse-resize, zoom-in, zoom-out); }
+@utility pointer-events-none { pointer-events: none; }
+@utility pointer-events-auto { pointer-events: auto; }
+@utility select-none { user-select: none; }
+@utility select-text { user-select: text; }
+@utility select-all { user-select: all; }
+@utility select-auto { user-select: auto; }
+@utility resize-none { resize: none; }
+@utility resize-y { resize: vertical; }
+@utility resize-x { resize: horizontal; }
+@utility resize { resize: both; }
+@utility scroll-auto { scroll-behavior: auto; }
+@utility scroll-smooth { scroll-behavior: smooth; }
+@utility scrollbar-gutter-* { scrollbar-gutter: --value(auto, stable, both); }
+@utility will-change-* { will-change: --value(<a-any>, <v-any>, auto, scroll, contents, transform); }
+
+/* ---------- transform / transition / animation ---------- */
+@utility rotate-* { rotate: --value(<number>, <a-any>, <v-any>, none); }
+@utility scale-* { scale: --value(<number>, <a-any>, <v-any>, none); }
+@utility scale-3d { scale: 1 1 1; }
+@utility translate-x-* { translate: --value(<spacing>, <fraction>, <a-any>, <v-any>, full); }
+@utility translate-y-* { translate: --value(<spacing>, <fraction>, <a-any>, <v-any>, full); }
+@utility skew-x-* { skew: --value(<number>, <a-any>, <v-any>, none); }
+@utility skew-y-* { skew: --value(<number>, <a-any>, <v-any>, none); }
+@utility translate-none { translate: none; }
+@utility origin-center { transform-origin: center; }
+@utility origin-top { transform-origin: top; }
+@utility origin-top-right { transform-origin: top right; }
+@utility origin-right { transform-origin: right; }
+@utility origin-bottom-right { transform-origin: bottom right; }
+@utility origin-bottom { transform-origin: bottom; }
+@utility origin-bottom-left { transform-origin: bottom left; }
+@utility origin-left { transform-origin: left; }
+@utility origin-top-left { transform-origin: top left; }
+@utility origin-* { transform-origin: --value(<position>, <a-any>, <v-any>, top, bottom, left, right, center, top-left, left-top, top-right, right-top, bottom-right, right-bottom, bottom-left, left-bottom); }
+@utility transition { transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, -webkit-backdrop-filter, backdrop-filter; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
+@utility transition-* { transition-property: --value(<a-any>, <v-any>, none, all, colors, opacity, shadow, transform); }
+@utility duration-* { transition-duration: --value(<number>, <a-any>, <v-any>, initial); }
+@utility delay-* { transition-delay: --value(<number>, <a-any>, <v-any>); }
+@utility ease-* { transition-timing-function: --value(--ease-*, <a-any>, <v-any>, linear, initial); }
+@utility animate-* { animation: --value(--animate-*, <a-any>, <v-any>, none); }
+
+/* ---------- misc ---------- */
+@utility fill-* { fill: --value(none, <color>); }
+@utility stroke-* { stroke-width: --value(<number>, <v-length>, <a-length>, <a-number>); }
+@utility stroke-* { stroke: --value(none, <color>); }
+@utility line-clamp-* { -webkit-line-clamp: --value(<number>, <a-any>, <v-any>, none); display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; }
+@utility zoom-* { zoom: --value(<integer>, <a-any>, <v-any>, none); }
+@utility scrollbar-thumb-* { scrollbar-color: --value(<color>); }
+@utility scrollbar-track-* { scrollbar-color: --value(<color>); }
+@utility mask-none { mask-image: none; }
+@utility mask-* { mask-position: --value(<position>, <a-position>, <v-position>, top, bottom, left, right, center, top-left, left-top, top-right, right-top, bottom-right, right-bottom, bottom-left, left-bottom); }
+@utility mask-* { mask-repeat: --value(repeat, no-repeat, repeat-x, repeat-y, repeat-space, repeat-round); }
+@utility mask-* { mask-size: --value(<a-size>, <v-size>, auto, cover, contain); }
+@utility mask-* { mask-image: --value(<a-image>, <v-image>, <a-any>, <v-any>); }
+@utility mask-position-* { mask-position: --value(<a-any>, <v-any>); }
+@utility mask-size-* { mask-size: --value(<a-any>, <v-any>); }
+@utility mask-type-* { mask-type: --value(luminance, alpha); }
+@utility @container { container-type: inline-size; }
+@utility @container-* { container-type: --value(<a-any>, <v-any>, normal, size); }
+@utility @container-type-* { container-type: --value(<a-any>, <v-any>, normal, size, inline-size); }

@@ -1,0 +1,10 @@
+[package]
+name = "twm-gen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+twm-core = { path = "../twm-core" }
+serde_json = "1"
+glob = "0.3"

@@ -1,0 +1,12 @@
+{
+    "name": "tw-merge-optimal-bench",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "bench:gen": "cargo run -p twm-core --bin bench_gen",
+        "bench": "npm run bench:gen && vitest bench --no-watch"
+    },
+    "devDependencies": {
+        "vitest": "^4.1.9"
+    }
+}

@@ -1,0 +1,138 @@
+/*
+ * test-extension.css — repo-local extension catalog, same `@utility` syntax
+ * as vendor/builtin-utilities.css.
+ *
+ * This file holds utilities required by the ported tailwind-merge corpus that
+ * the condensed starter catalog does not ship (Tailwind v4.0-v4.3 additions:
+ * logical sizes, mask families, inset-ring, container features, ...). Adding
+ * a missing utility here is the documented correctness loop for corpus
+ * parity: if a corpus case fails because a class cannot be resolved, the
+ * utility (or a refined alternative) is added here and the suite is re-run.
+ */
+
+/* ---------- v4.0: transforms / perspective ---------- */
+@utility transform-3d { transform-style: preserve-3d; }
+@utility transform-flat { transform-style: flat; }
+@utility rotate-x-* { --tw-rotate-x: --value(<number>, <a-any>, <v-any>, none); }
+@utility rotate-y-* { --tw-rotate-y: --value(<number>, <a-any>, <v-any>, none); }
+@utility rotate-z-* { --tw-rotate-z: --value(<number>, <a-any>, <v-any>, none); }
+@utility perspective-* { perspective: --value(<a-any>, <v-any>, dramatic, near, normal, midrange, distant, none); }
+@utility perspective-origin-* { perspective-origin: --value(<position>, <a-any>, <v-any>, top, bottom, left, right, center, top-left, left-top, top-right, right-top, bottom-right, right-bottom, bottom-left, left-bottom); }
+@utility bg-linear-to-* { background-image: --value(t, tr, r, br, b, bl, l, tl); }
+@utility bg-linear-* { background-image: --value(<integer>, <a-any>, <v-any>); }
+@utility bg-radial-* { background-image: --value(<a-any>, <v-any>); }
+@utility bg-conic-* { background-image: --value(<integer>, <a-any>, <v-any>); }
+@utility inset-ring { --tw-inset-ring-width: 1px; }
+@utility inset-ring-* { --tw-inset-ring-width: --value(<number>, <v-length>, <a-length>); }
+@utility inset-ring-* { --tw-inset-ring-color: --value(<color>); }
+@utility field-sizing-content { field-sizing: content; }
+@utility field-sizing-fixed { field-sizing: fixed; }
+@utility scheme-normal { color-scheme: normal; }
+@utility scheme-dark { color-scheme: dark; }
+@utility scheme-light { color-scheme: light; }
+@utility scheme-light-dark { color-scheme: light-dark; }
+@utility scheme-only-dark { color-scheme: only-dark; }
+@utility scheme-only-light { color-scheme: only-light; }
+@utility font-stretch-* { font-stretch: --value(<percentage>, <a-any>, ultra-condensed, extra-condensed, condensed, semi-condensed, normal, semi-expanded, expanded, extra-expanded, ultra-expanded); }
+@utility wrap-normal { text-wrap-style: normal; }
+@utility wrap-break-word { text-wrap-style: break-word; }
+@utility wrap-anywhere { text-wrap-style: anywhere; }
+@utility flex-col { flex-direction: column; }
+@utility flex-col-reverse { flex-direction: column-reverse; }
+@utility flex-row { flex-direction: row; }
+@utility flex-row-reverse { flex-direction: row-reverse; }
+@utility flex-wrap { flex-wrap: wrap; }
+@utility flex-nowrap { flex-wrap: nowrap; }
+@utility flex-wrap-reverse { flex-wrap: wrap-reverse; }
+
+/* ---------- v4.1: text-shadow extras / mask families ---------- */
+@utility mask-add { mask-composite: add; }
+@utility mask-subtract { mask-composite: subtract; }
+@utility mask-linear-* { --tw-mask-linear-pos: --value(<number>); }
+@utility mask-linear-from-* { --tw-mask-linear-from-pos: --value(<number>, <percentage>, <v-position>, <a-position>); }
+@utility mask-linear-to-* { --tw-mask-linear-to-pos: --value(<number>, <percentage>, <v-position>, <a-position>); }
+@utility mask-linear-from-color-* { --tw-mask-linear-from-color: --value(<color>); }
+@utility mask-linear-to-color-* { --tw-mask-linear-to-color: --value(<color>); }
+@utility mask-t-from-* { --tw-mask-t-from-pos: --value(<number>, <percentage>, <v-position>, <a-position>); }
+@utility mask-t-to-* { --tw-mask-t-to-pos: --value(<number>, <percentage>, <v-position>, <a-position>); }
+@utility mask-t-from-color-* { --tw-mask-t-from-color: --value(<color>); }
+@utility mask-t-to-color-* { --tw-mask-t-to-color: --value(<color>); }
+@utility mask-radial-* { --tw-mask-radial-pos: --value(<a-any>, <v-any>); }
+@utility mask-radial-from-* { --tw-mask-radial-from-pos: --value(<number>, <percentage>, <v-position>, <a-position>); }
+@utility mask-radial-to-* { --tw-mask-radial-to-pos: --value(<number>, <percentage>, <v-position>, <a-position>); }
+@utility mask-radial-from-color-* { --tw-mask-radial-from-color: --value(<color>); }
+@utility mask-radial-to-color-* { --tw-mask-radial-to-color: --value(<color>); }
+@utility items-baseline-last { align-items: baseline-last; }
+@utility items-center-safe { align-items: center-safe; }
+@utility items-end-safe { align-items: end-safe; }
+@utility self-baseline-last { align-self: baseline-last; }
+@utility self-end-safe { align-self: end-safe; }
+@utility place-content-center-safe { place-content: center-safe; }
+@utility place-content-end-safe { place-content: end-safe; }
+@utility content-center-safe { align-content: center-safe; }
+@utility content-end-safe { align-content: end-safe; }
+
+/* ---------- v4.1.5: logical line-height sizing ---------- */
+@utility inline-* { inline-size: --value(<spacing>, <fraction>, auto, screen, full, dvw, lvw, svw, min, max, fit); }
+@utility block-* { block-size: --value(<spacing>, <fraction>, auto, screen, full, lh, dvh, lvh, svh, min, max, fit); }
+@utility min-inline-* { min-inline-size: --value(<spacing>, <fraction>, auto, screen, full, dvw, lvw, svw, min, max, fit); }
+@utility max-inline-* { max-inline-size: --value(<spacing>, <fraction>, none, auto, screen, full, dvw, lvw, svw, min, max, fit); }
+@utility min-block-* { min-block-size: --value(<spacing>, <fraction>, auto, screen, full, lh, dvh, lvh, svh, min, max, fit); }
+@utility max-block-* { max-block-size: --value(<spacing>, <fraction>, none, auto, screen, full, lh, dvh, lvh, svh, min, max, fit); }
+
+/* ---------- v4.2: logical spacing / borders / scroll margins ---------- */
+@utility pbs-* { padding-block-start: --value(<spacing>, <a-any>, <v-any>); }
+@utility pbe-* { padding-block-end: --value(<spacing>, <a-any>, <v-any>); }
+@utility mbs-* { margin-block-start: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility mbe-* { margin-block-end: --value(<spacing>, <a-any>, <v-any>, auto); }
+@utility inset-bs-* { inset-block-start: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility inset-be-* { inset-block-end: --value(<spacing>, <fraction>, <a-any>, <v-any>, auto, full); }
+@utility border-bs-* { border-block-start-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-be-* { border-block-end-width: --value(<number>, <v-length>, <a-length>); }
+@utility border-bs-* { border-block-start-color: --value(<color>); }
+@utility border-be-* { border-block-end-color: --value(<color>); }
+@utility scroll-m-* { scroll-margin: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-mx-* { scroll-margin-inline: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-my-* { scroll-margin-block: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-ms-* { scroll-margin-inline-start: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-me-* { scroll-margin-inline-end: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-mbs-* { scroll-margin-block-start: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-mbe-* { scroll-margin-block-end: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-mt-* { scroll-margin-top: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-mr-* { scroll-margin-right: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-mb-* { scroll-margin-bottom: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-ml-* { scroll-margin-left: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-p-* { scroll-padding: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-px-* { scroll-padding-inline: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-py-* { scroll-padding-block: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-ps-* { scroll-padding-inline-start: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-pe-* { scroll-padding-inline-end: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-pbs-* { scroll-padding-block-start: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-pbe-* { scroll-padding-block-end: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-pt-* { scroll-padding-top: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-pr-* { scroll-padding-right: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-pb-* { scroll-padding-bottom: --value(<spacing>, <a-any>, <v-any>); }
+@utility scroll-pl-* { scroll-padding-left: --value(<spacing>, <a-any>, <v-any>); }
+@utility font-features-* { font-feature-settings: --value(<a-any>); }
+
+/* ---------- v4.3: scrollbar / zoom / tab-size extras ---------- */
+@utility scrollbar-auto { scrollbar-width: auto; }
+@utility scrollbar-thin { scrollbar-width: thin; }
+@utility scrollbar-none { scrollbar-width: none; }
+
+/* ---------- font variant numeric ---------- */
+@utility normal-nums { font-variant-numeric: normal; }
+@utility ordinal { font-variant-numeric: ordinal; }
+@utility slashed-zero { font-variant-numeric: slashed-zero; }
+@utility lining-nums { font-variant-numeric: lining-nums; }
+@utility oldstyle-nums { font-variant-numeric: oldstyle-nums; }
+@utility proportional-nums { font-variant-numeric: proportional-nums; }
+@utility tabular-nums { font-variant-numeric: tabular-nums; }
+@utility diagonal-fractions { font-variant-numeric: diagonal-fractions; }
+@utility stacked-fractions { font-variant-numeric: stacked-fractions; }
+
+/* ---------- misc ---------- */
+@utility forced-color-adjust-none { forced-color-adjust: none; }
+@utility forced-color-adjust-auto { forced-color-adjust: auto; }
+@utility appearance-none { appearance: none; }
+@utility appearance-auto { appearance: auto; }
