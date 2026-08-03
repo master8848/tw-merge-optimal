@@ -184,7 +184,7 @@ tailwind-merge's benchmarked `mergeClassList` uses).
 | Tables | `G`, `W` | `G`, `W`, `FN`, `PR`, `W2`, `TH`, `KW`, `P` |
 | Unseen classes | pass through unmerged (safe) | resolved by `m()` — full tailwind-merge-style heuristics |
 | Flags | `A`,`B`,`C` | `A`,`B`,`C`,`D` |
-| Bundle size | smallest (~3–16 KB) | full design-system grammar (~58–60 KB) |
+| Bundle size | exact only (3.4 KB sample, ~15 KB corpus union, ~20 KB bench union) | full design-system grammar (62.5 KB raw / 17.1 KB gzip) |
 | Correctness guarantee | scanned classes only | entire design system |
 
 Both modes produce **byte-identical output** on every class the exact mode

@@ -6,13 +6,25 @@ import { gzipSync } from 'node:zlib'
 // no config, no cache — the tables are static data).
 import { twMerge as twMergeOptimal } from './generated/tw-merge-optimal.mjs'
 
+// tw-merge-optimal exact mode: --no-patterns shape — only the scanned
+// classes, no pattern/theme tables (smaller bundle, pass-through otherwise).
+import { twMerge as twMergeExact } from './generated/tw-merge-optimal-exact.mjs'
+
 // tailwind-merge: reference implementation (point TAILWIND_MERGE_PATH at a
 // different checkout if needed).
 const tailwindMergePath =
     process.env.TAILWIND_MERGE_PATH ??
     new URL('../../tailwind-merge/dist/bundle-mjs.mjs', import.meta.url).href
 const tailwindMerge = await import(tailwindMergePath)
-const { extendTailwindMerge, twMerge: twMergeTailwind } = tailwindMerge
+const { extendTailwindMerge } = tailwindMerge
+
+// tailwind-merge instances are created ONCE at module load — the same as a
+// real app, which builds config + parsers a single time at startup. Every
+// measured call below is therefore a pure twMerge invocation, matching how
+// tw-merge-optimal is measured (its import is static data; there is nothing
+// to construct). The one-time init cost is reported separately in afterAll.
+const twMergeTailwindCached = extendTailwindMerge({})
+const twMergeTailwindNoCache = extendTailwindMerge({ cacheSize: 0 })
 
 import testDataCollection from './tw-merge-benchmark-data.json'
 import corpusCases from './generated/corpus-cases.json'
@@ -30,27 +42,21 @@ for (let i = 0; i < 200; i++) {
 }
 
 describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
-    // Init: tailwind-merge builds config + parsers + cache per instance;
-    // tw-merge-optimal has no init step (module import is one-time static data).
-    benchWithMemory('init tailwind-merge', () => {
-        const twMerge = extendTailwindMerge({})
-        twMerge()
-    })
-    benchWithMemory('init tw-merge-optimal (nothing to init)', () => {
-        twMergeOptimal()
-    })
-
+    // Pure merge time on both sides: tailwind-merge's config + parser are
+    // built once at module load (above), so these rows measure only the
+    // merge itself.
     benchWithMemory('simple tailwind-merge', () => {
-        const twMerge = extendTailwindMerge({})
-        twMerge('flex mx-10 px-10', 'mr-5 pr-5')
+        twMergeTailwindCached('flex mx-10 px-10', 'mr-5 pr-5')
     })
     benchWithMemory('simple tw-merge-optimal', () => {
         twMergeOptimal('flex mx-10 px-10', 'mr-5 pr-5')
     })
+    benchWithMemory('simple tw-merge-optimal exact', () => {
+        twMergeExact('flex mx-10 px-10', 'mr-5 pr-5')
+    })
 
     benchWithMemory('heavy tailwind-merge', () => {
-        const twMerge = extendTailwindMerge({})
-        twMerge(
+        twMergeTailwindCached(
             'font-medium text-sm leading-16',
             'group/button relative isolate items-center justify-center overflow-hidden rounded-md outline-none transition [-webkit-app-region:no-drag] focus-visible:ring focus-visible:ring-primary',
             'inline-flex',
@@ -77,11 +83,24 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
             null,
         )
     })
+    benchWithMemory('heavy tw-merge-optimal exact', () => {
+        twMergeExact(
+            'font-medium text-sm leading-16',
+            'group/button relative isolate items-center justify-center overflow-hidden rounded-md outline-none transition [-webkit-app-region:no-drag] focus-visible:ring focus-visible:ring-primary',
+            'inline-flex',
+            'bg-primary-50 ring ring-primary-200',
+            'text-primary dark:text-primary-900 hover:bg-primary-100',
+            false,
+            'font-medium text-sm leading-16 gap-4 px-6 py-4',
+            null,
+            'p-0 size-24',
+            null,
+        )
+    })
 
     benchWithMemory('collection tailwind-merge (with cache)', () => {
-        const twMerge = extendTailwindMerge({})
         for (let index = 0; index < testDataCollection.length; ++index) {
-            twMerge(...(testDataCollection[index] as TestDataItem))
+            twMergeTailwindCached(...(testDataCollection[index] as TestDataItem))
         }
     })
     benchWithMemory('collection tw-merge-optimal (no cache needed)', () => {
@@ -89,23 +108,28 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
             twMergeOptimal(...(testDataCollection[index] as TestDataItem))
         }
     })
-    benchWithMemory('collection tailwind-merge (cache off)', () => {
-        const twMerge = extendTailwindMerge({ cacheSize: 0 })
+    benchWithMemory('collection tw-merge-optimal exact', () => {
         for (let index = 0; index < testDataCollection.length; ++index) {
-            twMerge(...(testDataCollection[index] as TestDataItem))
+            twMergeExact(...(testDataCollection[index] as TestDataItem))
+        }
+    })
+    benchWithMemory('collection tailwind-merge (cache off)', () => {
+        for (let index = 0; index < testDataCollection.length; ++index) {
+            twMergeTailwindNoCache(...(testDataCollection[index] as TestDataItem))
         }
     })
 
     benchWithMemory('ultra long list tailwind-merge (cache off)', () => {
-        const twMerge = extendTailwindMerge({ cacheSize: 0 })
-        twMerge(...ultraLongClassList)
+        twMergeTailwindNoCache(...ultraLongClassList)
     })
     benchWithMemory('ultra long list tw-merge-optimal', () => {
         twMergeOptimal(...ultraLongClassList)
     })
+    benchWithMemory('ultra long list tw-merge-optimal exact', () => {
+        twMergeExact(...ultraLongClassList)
+    })
     benchWithMemory('ultra long list tailwind-merge (with cache)', () => {
-        const twMerge = extendTailwindMerge({})
-        twMerge(...ultraLongClassList)
+        twMergeTailwindCached(...ultraLongClassList)
     })
 
     // All 349 ported corpus cases: correctness parity against the real
@@ -113,9 +137,18 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
     // Cases from the documented-deviation group (flagged with a third
     // element) are only checked against tw-merge-optimal — tailwind-merge
     // legitimately disagrees there.
+    //
+    // Reading the rows: both sides cache repeated inputs, so every row
+    // measures steady-state merge throughput (caches warm up inside the run,
+    // exactly like a long-lived app). tailwind-merge's result cache is LRU
+    // with 500 entries (v3 default); tw-merge-optimal's is always-on and
+    // holds 8192. The "(cache off)" rows disable tailwind-merge's cache — its
+    // worst case — showing what the always-on cache is worth; the benchmark
+    // data repeats heavily (1,322 calls over 57 unique strings; the ultra-long
+    // list is one 2,400-class string), so that advantage is large.
     benchWithMemory('corpus 349 cases tailwind-merge', () => {
         for (const [input, expected, deviation] of corpusCases) {
-            if (!deviation && twMergeTailwind(input) !== expected) {
+            if (!deviation && twMergeTailwindCached(input) !== expected) {
                 throw new Error(`corpus mismatch: ${JSON.stringify(input)}`)
             }
         }
@@ -127,19 +160,36 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
             }
         }
     })
+    benchWithMemory('corpus 349 cases tw-merge-optimal exact', () => {
+        for (const [input, expected] of corpusCases) {
+            if (twMergeExact(input) !== expected) {
+                throw new Error(`corpus mismatch: ${JSON.stringify(input)}`)
+            }
+        }
+    })
 })
 
 afterAll(() => {
     const lines: string[] = ['\nBundle size & memory summary:']
     for (const [label, file] of [
         ['tailwind-merge bundle', '../../tailwind-merge/dist/bundle-mjs.mjs'],
-        ['tw-merge-optimal bundle', 'generated/tw-merge-optimal.mjs'],
+        ['tw-merge-optimal bundle (patterns)', 'generated/tw-merge-optimal.mjs'],
+        ['tw-merge-optimal bundle (exact)', 'generated/tw-merge-optimal-exact.mjs'],
     ] as const) {
         const url = new URL(file, import.meta.url)
         const bytes = statSync(url).size
         const gzip = gzipSync(readFileSync(url)).length
         lines.push(`  ${label}: ${formatBytes(bytes)} (${formatBytes(gzip)} gzip)`)
     }
+    // One-time startup cost: tailwind-merge builds config + parsers lazily on
+    // the FIRST merge call of each instance; tw-merge-optimal's module is
+    // static data with nothing to construct. Reported for context, not
+    // measured per call.
+    const freshInstance = extendTailwindMerge({})
+    const coldStart = performance.now()
+    freshInstance('flex mx-10 px-10', 'mr-5 pr-5')
+    const coldMs = performance.now() - coldStart
+    lines.push(`  tailwind-merge one-time init: ${(coldMs * 1000).toFixed(0)} us (lazy, first call per instance); tw-merge-optimal: 0 (static data)`)
     for (const [benchName, benchData] of memoryData.entries()) {
         const memoryDelta = benchData.after.heapUsed - benchData.before.heapUsed
         lines.push(`  ${benchName}: ${formatBytes(memoryDelta)} heap`)

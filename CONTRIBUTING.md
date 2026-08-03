@@ -38,7 +38,7 @@ Requires a recent stable Rust (see `rust-toolchain.toml`) and Node ≥ 18.
      `validators_truth.rs` aligned with `validators.test.ts` truth tables,
    - if it's a deliberate deviation: add it to
      `deviation_arbitrary_property_merging`-style group with a comment
-     explaining why, and document it in the README's Known deviations.
+     explaining why, and document it in `docs/deviations.md`.
 3. **Verify** — the whole test suite must be green:
 
    ```sh

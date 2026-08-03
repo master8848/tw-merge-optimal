@@ -212,4 +212,4 @@ corpus in `tests/js_parity.rs` and `tests/merge_corpus.rs`).
 4. otherwise build the conflict table (seeded from the pattern table in
    patterns mode) and emit the JS to `--out` or stdout.
 
-Every flag is documented in the [README](../README.md#cli) and in `--help`.
+Every flag is documented in [cli.md](cli.md) and in `--help`.

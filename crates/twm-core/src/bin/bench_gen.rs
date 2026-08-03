@@ -89,6 +89,11 @@ fn main() {
         table.family_names.len()
     );
 
+    let out_dir = root.join("bench/generated");
+    std::fs::create_dir_all(&out_dir).expect("create bench/generated");
+
+    // Patterns bundle: the out-of-box default. Embeds the full pattern table,
+    // so classes never seen at build time still merge correctly.
     let js = generate_js(
         &table,
         Some(&patterns),
@@ -97,11 +102,28 @@ fn main() {
             patterns: true,
         },
     );
-    let out_dir = root.join("bench/generated");
-    std::fs::create_dir_all(&out_dir).expect("create bench/generated");
     let bundle = out_dir.join("tw-merge-optimal.mjs");
     std::fs::write(&bundle, &js).expect("write bundle");
     eprintln!("bench_gen: wrote {} ({} bytes)", bundle.display(), js.len());
+
+    // Exact bundle (--no-patterns shape): only the scanned classes, no
+    // pattern/theme tables. Much smaller; classes outside the scan pass
+    // through unmerged. Benchmarked so the two modes can be compared.
+    let exact = generate_js(
+        &table,
+        None,
+        &GenerateOptions {
+            prefix: None,
+            patterns: false,
+        },
+    );
+    let exact_bundle = out_dir.join("tw-merge-optimal-exact.mjs");
+    std::fs::write(&exact_bundle, &exact).expect("write exact bundle");
+    eprintln!(
+        "bench_gen: wrote {} ({} bytes)",
+        exact_bundle.display(),
+        exact.len()
+    );
 
     // 4. Corpus cases JSON for the Node-side parity re-check. Cases from the
     //    documented-deviation group carry a third element (1) so the Node
