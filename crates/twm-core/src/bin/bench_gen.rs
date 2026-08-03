@@ -6,8 +6,11 @@
 //!   (`bench/tw-merge-benchmark-data.json`) and the "ultra long class list"
 //!   benchmark classes — so every class the benchmark feeds to `twMerge`
 //!   actually resolves in the table.
-//! - `corpus-cases.json` — the 335 (input, expected) pairs, so the Node
-//!   benchmark can re-check parity against tailwind-merge itself.
+//! - `corpus-cases.json` — the 349 (input, expected, deviation) triples, so
+//!   the Node benchmark can re-check parity against tailwind-merge itself.
+//!   The third element flags the documented-deviation corpus group
+//!   (arbitrary properties merge with the standard classes they write),
+//!   where tailwind-merge legitimately disagrees with the expected output.
 //!
 //! Usage: `cargo run -p twm-core --bin bench_gen`
 
@@ -99,18 +102,26 @@ fn main() {
     std::fs::write(&bundle, &js).expect("write bundle");
     eprintln!("bench_gen: wrote {} ({} bytes)", bundle.display(), js.len());
 
-    // 4. Corpus cases JSON for the Node-side parity re-check.
+    // 4. Corpus cases JSON for the Node-side parity re-check. Cases from the
+    //    documented-deviation group carry a third element (1) so the Node
+    //    side can skip the strict tailwind-merge comparison there.
     let mut cases = String::from("[");
     let mut first = true;
     let mut n_cases = 0usize;
     for file in corpus_data::FILES {
+        let dev = if file.name.starts_with("deviation_") { 1 } else { 0 };
         for (input, expected) in file.cases {
             if !first {
                 cases.push(',');
             }
             first = false;
             n_cases += 1;
-            cases.push_str(&format!("[{},{}]", js_string(input), js_string(expected)));
+            cases.push_str(&format!(
+                "[{},{},{}]",
+                js_string(input),
+                js_string(expected),
+                dev
+            ));
         }
     }
     cases.push(']');

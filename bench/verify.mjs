@@ -2,6 +2,11 @@
 // against tailwind-merge and times both. The rotated iteration order keeps V8
 // from hoisting pure calls out of the timing loop (constant-input folding is
 // a classic benchmark trap).
+//
+// Corpus cases from the documented-deviation group (arbitrary properties
+// merge with the standard classes they write) carry a third element and are
+// checked against tw-merge-optimal only — tailwind-merge legitimately
+// disagrees there, so it is reported but not a failure.
 import { readFileSync } from 'node:fs'
 import { performance } from 'node:perf_hooks'
 
@@ -13,12 +18,27 @@ const cases = JSON.parse(
     readFileSync(new URL('./generated/corpus-cases.json', import.meta.url), 'utf8'),
 )
 
-let mismatches = 0
-for (let i = 0; i < cases.length; i++) {
-    if (twMergeTailwind(cases[i][0]) !== cases[i][1]) mismatches++
-    if (twMergeOptimal(cases[i][0]) !== cases[i][1]) mismatches++
+const isOptimal = (name) => name.startsWith('tw-merge-optimal')
+const check = (name, i, out) => {
+    // Deviation-flagged cases are only checked against tw-merge-optimal.
+    if (out !== cases[i][1] && (isOptimal(name) || !cases[i][2])) {
+        throw new Error(`${name} mismatch`)
+    }
 }
-console.log(`parity mismatches (both impls): ${mismatches}`)
+
+let mismatches = 0
+let twDeviations = 0
+let deviationCases = 0
+for (let i = 0; i < cases.length; i++) {
+    if (cases[i][2]) deviationCases++
+    if (twMergeOptimal(cases[i][0]) !== cases[i][1]) mismatches++
+    const twOut = twMergeTailwind(cases[i][0])
+    if (cases[i][2] && twOut !== cases[i][1]) twDeviations++
+    if (!cases[i][2] && twOut !== cases[i][1]) mismatches++
+}
+console.log(
+    `parity mismatches: ${mismatches} (documented tailwind-merge deviations: ${twDeviations}/${deviationCases})`,
+)
 
 let acc = 0
 let iter = 0
@@ -32,7 +52,7 @@ for (const [name, fn] of [
         for (let j = 0; j < cases.length; j++) {
             const i = (start + j) % cases.length
             const out = fn(cases[i][0])
-            if (out !== cases[i][1]) throw new Error(`${name} mismatch`)
+            check(name, i, out)
             for (let k = 0; k < out.length; k++) acc = (acc + out.charCodeAt(k)) | 0
         }
     }
@@ -42,7 +62,7 @@ for (const [name, fn] of [
         for (let j = 0; j < cases.length; j++) {
             const i = (start + j) % cases.length
             const out = fn(cases[i][0])
-            if (out !== cases[i][1]) throw new Error(`${name} mismatch`)
+            check(name, i, out)
             for (let k = 0; k < out.length; k++) acc = (acc + out.charCodeAt(k)) | 0
         }
     }

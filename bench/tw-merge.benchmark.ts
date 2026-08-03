@@ -108,16 +108,19 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
         twMerge(...ultraLongClassList)
     })
 
-    // All 335 ported corpus cases: correctness parity against the real
+    // All 349 ported corpus cases: correctness parity against the real
     // tailwind-merge AND speed, in one bench. Throws on any mismatch.
-    benchWithMemory('corpus 335 cases tailwind-merge', () => {
-        for (const [input, expected] of corpusCases) {
-            if (twMergeTailwind(input) !== expected) {
+    // Cases from the documented-deviation group (flagged with a third
+    // element) are only checked against tw-merge-optimal — tailwind-merge
+    // legitimately disagrees there.
+    benchWithMemory('corpus 349 cases tailwind-merge', () => {
+        for (const [input, expected, deviation] of corpusCases) {
+            if (!deviation && twMergeTailwind(input) !== expected) {
                 throw new Error(`corpus mismatch: ${JSON.stringify(input)}`)
             }
         }
     })
-    benchWithMemory('corpus 335 cases tw-merge-optimal', () => {
+    benchWithMemory('corpus 349 cases tw-merge-optimal', () => {
         for (const [input, expected] of corpusCases) {
             if (twMergeOptimal(input) !== expected) {
                 throw new Error(`corpus mismatch: ${JSON.stringify(input)}`)
