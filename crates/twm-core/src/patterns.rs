@@ -396,7 +396,11 @@ fn spec_code(
     }
 }
 
-fn family_id(name: &str, family_names: &mut Vec<String>, family_ids: &mut HashMap<String, u16>) -> u16 {
+fn family_id(
+    name: &str,
+    family_names: &mut Vec<String>,
+    family_ids: &mut HashMap<String, u16>,
+) -> u16 {
     if let Some(&i) = family_ids.get(name) {
         return i;
     }

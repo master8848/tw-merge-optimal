@@ -5,3 +5,4 @@ dist/
 *.log
 .tw-merge-optimal/
 packages/tw-merge-optimal/generated.mjs
+packages/tw-merge-optimal/bin/

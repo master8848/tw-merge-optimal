@@ -53,9 +53,18 @@ export function findBinary() {
             if (existsSync(bin)) return bin;
         }
     }
+    // Prebuilt binary downloaded by the postinstall script
+    // (node_modules/tw-merge-optimal/bin).
+    const ext = process.platform === 'win32' ? '.exe' : '';
+    const downloaded = join(THIS_DIR, 'bin', `twm-gen-${process.platform}-${process.arch}${ext}`);
+    if (existsSync(downloaded)) return downloaded;
     throw new Error(
-        'tw-merge-optimal: cannot locate the twm-gen binary. ' +
-            'Build it with `cargo build -p twm-gen --release`, or set TWM_GEN_BIN to its path.'
+        'tw-merge-optimal: cannot locate the twm-gen binary.\n' +
+            '  The postinstall script downloads a prebuilt binary from GitHub Releases — ' +
+            're-run `npm install` (or `npm rebuild tw-merge-optimal`) to retry, or use one of:\n' +
+            '  - set TWM_GEN_BIN=/path/to/twm-gen\n' +
+            '  - build it yourself: cargo build -p twm-gen --release\n' +
+            '  - offline? set TWM_GEN_REPO and download the release asset manually.'
     );
 }
 

@@ -64,7 +64,8 @@ fn main() {
     // The out-of-box default: full pattern table + seeded family ids, so the
     // bench measures the same bundle shape users actually get.
     let patterns = PatternTable::from_design_system(&ds);
-    let table = ConflictTable::from_classes_seeded(&ds, &classes, None, patterns.family_names.clone());
+    let table =
+        ConflictTable::from_classes_seeded(&ds, &classes, None, patterns.family_names.clone());
 
     // Resolution stats: how many of the benchmark's unique classes are in the table?
     let mut bench_classes: Vec<String> = Vec::new();
@@ -109,7 +110,11 @@ fn main() {
     let mut first = true;
     let mut n_cases = 0usize;
     for file in corpus_data::FILES {
-        let dev = if file.name.starts_with("deviation_") { 1 } else { 0 };
+        let dev = if file.name.starts_with("deviation_") {
+            1
+        } else {
+            0
+        };
         for (input, expected) in file.cases {
             if !first {
                 cases.push(',');

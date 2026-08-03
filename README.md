@@ -1,14 +1,63 @@
 # tw-merge-optimal
 
-> Build-time Tailwind class-merge generator — merge logic derived from the **core Tailwind
-> parser** (not a hand-maintained config), emitting a minimal runtime bundle. No WASM,
-> pure browser-ready ESM.
+> Build-time Tailwind class-merge generator. Conflict groups are derived from the **core
+> Tailwind parser** (not a hand-maintained config), so you get tailwind-merge's semantics at
+> a fraction of the size — with a tiny, dependency-free, browser-ready ESM runtime. No WASM,
+> no config file, no hand-maintained class map.
 
-**Status: v0.1 — test project pushing the limits of speed & optimization.** Scans your
-project with `tailwindcss-oxide`, derives conflict groups from the actual CSS your utilities
-generate, and generates a dependency-free `twMerge`/`twJoin` module with the full
-design-system pattern table (default) — so scanned classes merge via O(1) table lookups
-with whole-call result caching, and classes the scanner missed still resolve at runtime.
+**What it does.** `twm-gen` scans your project with `tailwindcss-oxide` (the same candidate
+extractor the Tailwind CLI uses), derives conflict groups from the actual CSS your utilities
+generate, and emits a dependency-free `twMerge`/`twJoin` module containing only the classes
+your project uses (plus the full design-system pattern table by default). At runtime merging
+is O(1) table lookups with whole-call result caching — 100×+ faster than tailwind-merge on
+typical calls, and ~15 KB (gzipped) instead of 17 KB+ for the full config, shrinking further
+for smaller projects.
+
+**Status: v0.1.** The API surface is small and stable (`twMerge`/`twJoin`, the CLI, and the
+bundler plugins); the implementation is under active development. Behavior is verified
+against tailwind-merge's entire 349-case runtime corpus (see [Tests](#tests) and
+[Known deviations](#known-deviations-v01)).
+
+## Install
+
+**No Rust toolchain required.** Prebuilt `twm-gen` binaries for macOS / Linux /
+Windows (x64 & arm64) are attached to every
+[GitHub Release](https://github.com/master8848/tw-merge-optimal/releases).
+
+Option A — **npm package** (bundler plugins, recommended):
+
+```sh
+npm install -D tw-merge-optimal
+```
+
+The postinstall script downloads the right binary automatically; add the
+matching plugin from [Build-time plugins](#build-time-plugins) and import
+`{ twMerge } from 'tw-merge-optimal'`. (Package is not published to npm yet —
+until then, install from this repo: `npm install -D github:master8848/tw-merge-optimal`.)
+
+Option B — **CLI only**, via a release binary:
+
+```sh
+curl -L -o /usr/local/bin/twm-gen https://github.com/master8848/tw-merge-optimal/releases/latest/download/twm-gen-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/x64/')
+chmod +x /usr/local/bin/twm-gen
+```
+
+Option C — **from source** (needs Rust):
+
+```sh
+cargo install --git https://github.com/master8848/tw-merge-optimal twm-gen
+```
+
+Binary resolution order everywhere: `TWM_GEN_BIN` env var → workspace build →
+downloaded prebuilt binary.
+
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | The build-time pipeline, module by module (scan → parse → resolve → group → conflict → generate) |
+| [docs/validators.md](docs/validators.md) | Every value validator: what matches, how it maps to `--value(...)` markers, the JS port |
+| [docs/runtime.md](docs/runtime.md) | The generated bundle: every table, every flag (`A`/`B`/`C`/`D`), and the exact `twMerge` control flow |
 
 ## Credits & Attribution
 
@@ -53,6 +102,72 @@ arbitrary `[...]` variants never reorder across each other); `/postfix` modifier
 handled (`text-lg/7` conflicts with `leading-*`; `@container/[name]` is a named
 container); `!` suffix (and legacy `!` prefix) important; unknown classes pass through
 untouched.
+
+## Migrating from tailwind-merge
+
+`twMerge`/`twJoin` are drop-in replacements — same signatures (rest args, nested
+arrays, falsy values ignored), same merge semantics, verified against tailwind-merge's
+own corpus. Switching takes three steps:
+
+1. **Swap the import.**
+
+   ```js
+   // before
+   import { twMerge, twJoin } from 'tailwind-merge'
+   // after
+   import { twMerge, twJoin } from 'tw-merge-optimal'
+   ```
+
+2. **Wire the generator into your build** so that import resolves to your
+   per-project bundle. Two options:
+
+   - **Bundler plugin** — add the matching plugin from the
+     [Build-time plugins](#build-time-plugins) table to your Vite/Rspack/Rsbuild/
+     webpack/Bun/Next.js config. That's the whole migration for bundler users.
+   - **CLI** — run `twm-gen --out src/tw-merge.mjs "src/**/*.{ts,tsx}"` and import
+     `./tw-merge.mjs` directly.
+
+3. **Remove tailwind-merge config.** There is no `extendTailwindMerge`/
+   `createTailwindMerge` here. What tailwind-merge would express as a config —
+   custom utilities, theme values, prefixes — you declare in CSS with the same
+   `@utility`/`@theme` syntax you already use for Tailwind itself, and pass via
+   `--css` (see the [CLI](#cli)). One source of truth, no parallel config.
+
+4. **Re-run generation when your classes change.** Plugins regenerate on every
+   build; with the CLI, re-run `twm-gen`. Patterns mode (default) keeps classes the
+   scanner never saw resolving at runtime, so a stale bundle degrades gracefully
+   instead of breaking.
+
+5. **Check the differences.** Everything tailwind-merge does is preserved except the
+   config API; the one deliberate behavior change is that arbitrary properties
+   (`[padding:1rem]`) now merge with the standard classes they write
+   (`p-4`) — see [Known deviations](#known-deviations-v01). Roll back any time by
+   reverting step 1.
+
+## Use cases
+
+**Good fit**
+
+- Perf-critical rendering — React-heavy apps, server components, or hot paths where
+  class-merging happens thousands of times per render; tw-merge-optimal wins by
+  100×+ on typical calls (see [Performance](#performance)).
+- Bundle-size-sensitive projects — the runtime is a few KB of static ESM data (pure
+  browser ESM, no WASM, no config); exact mode (`--no-patterns`) emits only the
+  classes your project uses.
+- Dynamic class strings — CMS content, runtime-composed classes: patterns mode
+  (default) resolves classes the scanner never saw.
+- CI conflict gating — `--check` fails the build when conflicting classes are used,
+  catching dead styling before it ships.
+
+**Not a good fit**
+
+- You're happy with tailwind-merge's bundle size and want zero build steps.
+- Your codebase relies on the tailwind-merge config API (`extendTailwindMerge`
+  with custom class groups, `conflictingClassGroupModifiers`, etc.) and you can't
+  move that declaration into CSS.
+- One-off class strings with no design-system pattern (undeclared custom classes)
+  pass through unmerged — the safe direction, but if that's most of your classes,
+  there's little to gain.
 
 ## CLI
 
@@ -126,6 +241,25 @@ Extend the design system with your own utilities (`--css`, same `@utility` synta
 $ twm-gen --css site.css --out tw-merge.mjs src/
 ```
 
+## Modes
+
+`twm-gen` has two output modes, selected per invocation:
+
+| | **Patterns** (default) | **Exact** (`--no-patterns`) |
+|---|---|---|
+| What's in the bundle | Scanned classes **+ the full design-system grammar** (every utility name, value spec, theme set, keyword) | Only the scanned classes |
+| Unseen classes | Resolved at runtime via the `m()` matcher — runtime-composed strings, CMS content, arbitrary values all merge correctly | Pass through unmerged (the safe direction) |
+| Bundle size | ~58–60 KB raw (~15.7 KB gzip) for the full grammar, independent of project size | ~3–16 KB depending on how many classes you use |
+| Runtime | O(1) `G`/`W` table lookups; patterns only run on a table miss | O(1) table lookups only |
+| When to use | Default. Any project with dynamic class strings | Smallest bundle possible; every class is statically known and regeneration is wired into CI |
+
+Both modes produce **byte-identical results for every class the exact mode
+knows** — patterns mode is a strict superset. The generated runtime is
+identical in structure; the exact bundle omits the pattern tables (`FN`,
+`PR`, `W2`, `TH`, `KW`, `P`) and the `D` flag. See
+[docs/runtime.md](docs/runtime.md#mode-comparison) for the full breakdown of
+the generated code, flags and control flow.
+
 ## Size
 
 Measured raw and gzipped (Node zlib, same run as the benchmarks below):
@@ -158,7 +292,7 @@ The build tool itself is a single native binary: `twm-gen` release is
 
 Head-to-head against [tailwind-merge](https://github.com/dcastil/tailwind-merge)
 using the same workloads as tailwind-merge's own `tw-merge.benchmark.ts` suite,
-plus a full pass over all 335 ported corpus cases. Both implementations run in
+plus a full pass over all 349 ported corpus cases. Both implementations run in
 the same process (Node v24, Apple Silicon); `bench/tw-merge.benchmark.ts`
 measures ops/s (higher = better):
 
@@ -265,7 +399,7 @@ node bench/verify.mjs
   important-modifier, arbitrary-values, arbitrary-variants, arbitrary-properties,
   prefixes, tailwind-css-versions (v3.3–v4.3, all cases), array-values,
   docs-examples, tw-join — plus the `deviation_arbitrary_property_merging`
-  group. **349 assertions, 57 test groups — all green.**
+  group. **349 assertions, 51 corpus groups — all green.**
 - `crates/twm-core/tests/validators_truth.rs` — the `validators.test.ts` truth tables
   (isArbitraryLength, isArbitraryNumber, isArbitraryColor, isFraction, isInteger,
   isNumber, isPercent, isTshirtSize, isArbitraryShadow, isArbitraryVariable*,
@@ -285,7 +419,7 @@ node bench/verify.mjs
 
 ```sh
 cargo build
-cargo test                      # 20 lib + 57 corpus + 1 js-parity + 25 validators + 1 patterns
+cargo test                      # 20 lib + 58 corpus + 1 js-parity + 25 validators + 1 patterns
 cargo test -- --include-ignored # + the 2 documented known-deviation placeholders
 ```
 

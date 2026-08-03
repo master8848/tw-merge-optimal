@@ -24,6 +24,7 @@
         "index.mjs",
         "index.d.ts",
         "cli.mjs",
+        "install.mjs",
         "vite.mjs",
         "webpack.mjs",
         "rspack.mjs",
@@ -32,6 +33,9 @@
         "turbopack.mjs",
         "babel.mjs"
     ],
+    "scripts": {
+        "postinstall": "node install.mjs"
+    },
     "engines": {
         "node": ">=18"
     },

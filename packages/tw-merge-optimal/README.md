@@ -11,19 +11,27 @@ pure browser-ready ESM.
 
 ## Prerequisites
 
-The package is a wrapper around the `twm-gen` native binary (Rust). Build it
-once:
+**No Rust toolchain needed.** The package downloads a prebuilt `twm-gen`
+binary for your platform (macOS / Linux / Windows, x64 & arm64) from
+[GitHub Releases](https://github.com/master8848/tw-merge-optimal/releases)
+during `npm install` (postinstall script). Nothing to configure.
+
+Only if the download failed or you want a from-source binary:
 
 ```sh
 cargo build -p twm-gen --release
 ```
 
-The binary is auto-detected from the workspace (`target/release` or
-`target/debug`), or point at it explicitly:
+The binary is auto-detected in this order:
 
-```sh
-export TWM_GEN_BIN=/path/to/twm-gen
-```
+1. `TWM_GEN_BIN` environment variable (explicit path),
+2. workspace build (`target/release` or `target/debug`) — when running inside
+   the tw-merge-optimal source tree,
+3. the downloaded prebuilt binary (`node_modules/tw-merge-optimal/bin/`).
+
+Advanced install knobs: `TWM_GEN_REPO` (default `master8848/tw-merge-optimal`)
+picks a different release source, `TWM_GEN_VERSION` pins a release tag
+instead of `latest`, and `TWM_NO_DOWNLOAD=1` skips the download.
 
 ## Install
 

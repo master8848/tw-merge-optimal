@@ -51,7 +51,10 @@ const SMOKE_CASES: &[(&str, &str)] = &[
     ("leading-9 text-lg/none", "text-lg/none"),
     ("leading-9 text-5xl/17", "text-5xl/17"),
     // named container conflicts with plain container-type
-    ("@container @container-size/sidebar", "@container-size/sidebar"),
+    (
+        "@container @container-size/sidebar",
+        "@container-size/sidebar",
+    ),
     // inset edge: inset drops inset-x/inset-y
     ("inset-x-1 inset-1 left-1", "inset-1 left-1"),
 ];

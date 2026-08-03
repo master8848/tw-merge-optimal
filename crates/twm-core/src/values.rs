@@ -152,15 +152,12 @@ pub fn is_arbitrary_number(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_size(value: &str) -> bool {
-    get_arbitrary_parts(value).is_some_and(|(label, _)| {
-        !label.is_empty() && is_label_size(label)
-    })
+    get_arbitrary_parts(value).is_some_and(|(label, _)| !label.is_empty() && is_label_size(label))
 }
 
 pub fn is_arbitrary_position(value: &str) -> bool {
-    get_arbitrary_parts(value).is_some_and(|(label, _)| {
-        !label.is_empty() && is_label_position(label)
-    })
+    get_arbitrary_parts(value)
+        .is_some_and(|(label, _)| !label.is_empty() && is_label_position(label))
 }
 
 pub fn is_arbitrary_image(value: &str) -> bool {
@@ -214,9 +211,7 @@ pub fn is_arbitrary_ratio(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_ident(value: &str) -> bool {
-    get_arbitrary_parts(value).is_some_and(|(label, _)| {
-        label.is_empty() || label == "custom-ident"
-    })
+    get_arbitrary_parts(value).is_some_and(|(label, _)| label.is_empty() || label == "custom-ident")
 }
 
 pub fn is_arbitrary_url(value: &str) -> bool {
@@ -318,14 +313,12 @@ pub fn is_arbitrary_variable_time(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_variable_ident(value: &str) -> bool {
-    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| {
-        label.is_empty() || label == "custom-ident"
-    })
+    get_arbitrary_variable_parts(value)
+        .is_some_and(|(label, _)| label.is_empty() || label == "custom-ident")
 }
 
 pub fn is_arbitrary_variable_url(value: &str) -> bool {
-    get_arbitrary_variable_parts(value)
-        .is_some_and(|(label, _)| label.is_empty() || label == "url")
+    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| label.is_empty() || label == "url")
 }
 
 pub fn is_arbitrary_variable_percent(value: &str) -> bool {

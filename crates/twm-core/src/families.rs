@@ -566,8 +566,8 @@ pub fn conflict_edges(family: &str) -> &'static [&'static str] {
         // Arbitrary `[color:...]` (family `color`) merges with the color
         // writers in both orders; families here are only reachable from
         // arbitrary-property classes, so no standard behavior changes.
-        "text-color" | "decoration-color" | "shadow-color" | "ring-color"
-        | "inset-ring-color" | "outline-color" => &["color"],
+        "text-color" | "decoration-color" | "shadow-color" | "ring-color" | "inset-ring-color"
+        | "outline-color" => &["color"],
         _ => &[],
     }
 }

@@ -1,0 +1,78 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: twm-gen ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-22.04
+            artifact: twm-gen-linux-x64
+          - name: linux-arm64
+            os: ubuntu-22.04-arm
+            artifact: twm-gen-linux-arm64
+          - name: darwin-x64
+            os: macos-13
+            artifact: twm-gen-darwin-x64
+          - name: darwin-arm64
+            os: macos-14
+            artifact: twm-gen-darwin-arm64
+          - name: win32-x64
+            os: windows-2022
+            artifact: twm-gen-win32-x64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Build (release)
+        run: cargo build -p twm-gen --release
+
+      - name: Copy binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/twm-gen${{ runner.os == 'Windows' && '.exe' || '' }} dist/${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Verify artifacts
+        run: ls -la dist
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

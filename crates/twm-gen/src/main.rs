@@ -114,7 +114,11 @@ fn main() -> ExitCode {
                 all_classes.len(),
                 out,
                 js.len(),
-                if args.patterns { ", patterns" } else { ", exact" }
+                if args.patterns {
+                    ", patterns"
+                } else {
+                    ", exact"
+                }
             );
         }
         None => print!("{js}"),
@@ -223,10 +227,13 @@ fn has_glob_chars(s: &str) -> bool {
 fn collect_paths(pattern: &str, out: &mut Vec<String>) {
     if has_glob_chars(pattern) {
         let mut seen = HashSet::new();
-        for path in glob::glob(pattern).unwrap_or_else(|e| {
-            eprintln!("twm-gen: bad glob {pattern}: {e}");
-            std::process::exit(1);
-        }).flatten() {
+        for path in glob::glob(pattern)
+            .unwrap_or_else(|e| {
+                eprintln!("twm-gen: bad glob {pattern}: {e}");
+                std::process::exit(1);
+            })
+            .flatten()
+        {
             let key = path.to_string_lossy().into_owned();
             if seen.insert(key.clone()) {
                 out.push(key);
