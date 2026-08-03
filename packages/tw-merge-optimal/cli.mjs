@@ -121,7 +121,7 @@ export function generate(options = {}) {
 
     let bytes = null;
     if (out) {
-        const m = stderr.match(/wrote \S+ \((\d+) bytes\)/);
+        const m = stderr.match(/wrote \S+ \((\d+) bytes/);
         bytes = m ? Number(m[1]) : 0;
     }
 

@@ -255,7 +255,7 @@ impl PatternTable {
             let id = family_id(&fam, &mut family_names, &mut family_ids);
             prop_ids.insert(prop, id);
         }
-        prop_family.extend(prop_ids.into_iter());
+        prop_family.extend(prop_ids);
         prop_family.sort_by(|a, b| a.0.cmp(&b.0));
 
         let leading = family_names
