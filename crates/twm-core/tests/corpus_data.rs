@@ -1,4 +1,4 @@
-//! Shared corpus data — ported runtime assertions from master8848/tailwind-merge
+//! Shared corpus data — ported runtime assertions from dcastil/tailwind-merge
 //! v3.6.0 (`tests/`). Consumed by `merge_corpus.rs` (Rust) and `js_parity.rs`
 //! (generated-JS via Node). Do not edit by hand; keep in sync with the
 //! upstream files listed in `merge_corpus.rs`.

@@ -1,4 +1,4 @@
-//! Port of validators.test.ts from master8848/tailwind-merge v3.6.0 — the
+//! Port of validators.test.ts from dcastil/tailwind-merge v3.6.0 — the
 //! truth tables that drive class-group value acceptance. The engine's
 //! arbitrary-value type validators must match these exactly.
 

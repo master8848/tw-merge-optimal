@@ -66,7 +66,7 @@ This project was researched and modeled on the following open-source projects:
 | Project | How it helped |
 |---|---|
 | [tailwindlabs/tailwindcss](https://github.com/tailwindlabs/tailwindcss) (MIT) | The `tailwindcss-oxide` Rust crate (candidate extraction), the default `theme.css`, and the `@theme` / `@utility` directive syntax used to derive conflict groups from generated CSS. Consumed as a path dependency. |
-| [master8848/tailwind-merge](https://github.com/master8848/tailwind-merge) / [dcastil/tailwind-merge](https://github.com/dcastil/tailwind-merge) (MIT) | The merge algorithm semantics (right-to-left, group keys, modifier sorting, postfix handling) and the **entire runtime test corpus** ported into this repo's test suite. |
+| [dcastil/tailwind-merge](https://github.com/dcastil/tailwind-merge) (MIT) | The merge algorithm semantics (right-to-left, group keys, modifier sorting, postfix handling) and the **entire runtime test corpus** ported into this repo's test suite. |
 | [tailwindlabs/tailwindcss-intellisense](https://github.com/tailwindlabs/tailwindcss-intellisense) (MIT) | Reference for candidate parsing semantics. |
 
 The vendored `vendor/tailwindcss/theme.css` is copied from tailwindcss v4 (MIT). The authored

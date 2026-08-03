@@ -1,4 +1,4 @@
-//! Ported runtime corpus from master8848/tailwind-merge v3.6.0 (`tests/`).
+//! Ported runtime corpus from dcastil/tailwind-merge v3.6.0 (`tests/`).
 //!
 //! Every runtime assertion from the files below is ported 1:1 into
 //! `corpus_data.rs`; each `#[test]` below runs one corpus group against a
