@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use twm_core::generate::{generate_js, js_string, GenerateOptions};
-use twm_core::ConflictTable;
+use twm_core::{ConflictTable, PatternTable};
 
 fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -58,7 +58,10 @@ fn main() {
 
     let ds = twm_core::default_design_system();
     let classes: Vec<String> = classes.into_iter().collect();
-    let table = ConflictTable::from_classes(&ds, &classes, None);
+    // The out-of-box default: full pattern table + seeded family ids, so the
+    // bench measures the same bundle shape users actually get.
+    let patterns = PatternTable::from_design_system(&ds);
+    let table = ConflictTable::from_classes_seeded(&ds, &classes, None, patterns.family_names.clone());
 
     // Resolution stats: how many of the benchmark's unique classes are in the table?
     let mut bench_classes: Vec<String> = Vec::new();
@@ -84,10 +87,10 @@ fn main() {
 
     let js = generate_js(
         &table,
-        None,
+        Some(&patterns),
         &GenerateOptions {
             prefix: None,
-            patterns: false,
+            patterns: true,
         },
     );
     let out_dir = root.join("bench/generated");

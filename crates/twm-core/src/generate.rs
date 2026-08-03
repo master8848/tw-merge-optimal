@@ -287,8 +287,14 @@ function toValue(m){if(typeof m==='string')return m;let s='';for(let k=0;k<m.len
 /// chars (two classes minimum for a conflict) return trimmed+normalized
 /// before any split/parse; tokenization is a right-to-left charCode scan that
 /// slices tokens without allocating a split array.
+///
+/// Whole-call results are memoized in `RC` (input -> output), the same trick
+/// as tailwind-merge's opt-in result cache — but always on, because renders
+/// (React etc.) repeat identical class strings constantly. Bounded at 8192
+/// entries like the per-class parse memo `PC`; cleared wholesale when
+/// exceeded, capping memory on long-lived apps with dynamic class strings.
 const TW_MERGE_JS: &str = r#"
-export function twMerge(...x){const l=twJoin(...x),t=l.trim();if(t.length<7)return t.replace(/\s+/g,' ');let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;const q=p(c);if(q[5]){o=c+(o?' '+o:'');continue}let f;if(A&&q[3]&&(q[2]+'/')in G)f=G[q[2]+'/'];else if(q[2]in G)f=G[q[2]];else if(C&&q[4]&&(q[4]+'arb')in G)f=G[q[4]+'arb'];else{o=c+(o?' '+o:'');continue}const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.includes(k))continue;const cf=W[f],pre=v+(q[0]?'!':'');if(!seen)seen=[];for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}return o}
+const RC=new Map();export function twMerge(...x){const l=twJoin(...x),h=RC.get(l);if(h!==undefined)return h;if(RC.size>8192)RC.clear();const t=l.trim();if(t.length<7){const r=t.replace(/\s+/g,' ');RC.set(l,r);return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;const q=p(c);if(q[5]){o=c+(o?' '+o:'');continue}let f;if(A&&q[3]&&(q[2]+'/')in G)f=G[q[2]+'/'];else if(q[2]in G)f=G[q[2]];else if(C&&q[4]&&(q[4]+'arb')in G)f=G[q[4]+'arb'];else{o=c+(o?' '+o:'');continue}const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.includes(k))continue;const cf=W[f],pre=v+(q[0]?'!':'');if(!seen)seen=[];for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}RC.set(l,o);return o}
 "#;
 
 /// Patterns-mode `twMerge`: same as `TW_MERGE_JS` (short-input fast path,
@@ -297,7 +303,7 @@ export function twMerge(...x){const l=twJoin(...x),t=l.trim();if(t.length<7)retu
 /// are emitted only when those families exist.
 fn tw_merge_patterns_js(p: &PatternTable) -> String {
     let mut js = String::from(
-        "export function twMerge(...x){const l=twJoin(...x),t=l.trim();if(t.length<7)return t.replace(/\\s+/g,' ');let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;const q=p(c);if(q[5]){o=c+(o?' '+o:'');continue}let f,cf;",
+        "const RC=new Map();export function twMerge(...x){const l=twJoin(...x),h=RC.get(l);if(h!==undefined)return h;if(RC.size>8192)RC.clear();const t=l.trim();if(t.length<7){const r=t.replace(/\\s+/g,' ');RC.set(l,r);return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;const q=p(c);if(q[5]){o=c+(o?' '+o:'');continue}let f,cf;",
     );
     js.push_str(
         "if(A&&q[3]&&(q[2]+'/')in G)f=G[q[2]+'/'];else if(q[2]in G)f=G[q[2]];else if(C&&q[4]&&(q[4]+'arb')in G)f=G[q[4]+'arb'];else if(D){const r=m(q[2]);if(!r){o=c+(o?' '+o:'');continue}f=r[0];cf=r[1];if(A&&q[3]){",
@@ -309,7 +315,7 @@ fn tw_merge_patterns_js(p: &PatternTable) -> String {
         js.push_str("if(CT!==undefined&&CN!==undefined&&f===CT&&cn(q[2]+q[6]))f=CN,cf=W[CN];");
     }
     js.push_str(
-        "}}else{o=c+(o?' '+o:'');continue}if(cf===undefined)cf=W[f];if(cf===undefined)cf=[f];const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.includes(k))continue;const pre=v+(q[0]?'!':'');if(!seen)seen=[];for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}return o}",
+        "}}else{o=c+(o?' '+o:'');continue}if(cf===undefined)cf=W[f];if(cf===undefined)cf=[f];const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.includes(k))continue;const pre=v+(q[0]?'!':'');if(!seen)seen=[];for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}RC.set(l,o);return o}",
     );
     js
 }

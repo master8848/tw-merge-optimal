@@ -7,7 +7,7 @@ mod corpus_data;
 
 use std::process::Command;
 
-use twm_core::{generate_js, ConflictTable, GenerateOptions};
+use twm_core::{generate_js, ConflictTable, GenerateOptions, PatternTable};
 
 fn corpus_union() -> Vec<String> {
     let mut union: Vec<String> = Vec::new();
@@ -29,9 +29,9 @@ fn corpus_union() -> Vec<String> {
 fn js_parity_and_bundle_sizes() {
     let ds = common::design_system();
     let union = corpus_union();
-    let table = ConflictTable::from_classes(&ds, &union, None);
-    let js = generate_js(
-        &table,
+    let exact_table = ConflictTable::from_classes(&ds, &union, None);
+    let exact_js = generate_js(
+        &exact_table,
         None,
         &GenerateOptions {
             prefix: None,
@@ -39,11 +39,31 @@ fn js_parity_and_bundle_sizes() {
         },
     );
 
-    let bundle_bytes = js.len();
-    println!("corpus-union bundle size: {bundle_bytes} bytes");
+    // The out-of-box default: full pattern table + seeded family ids, so
+    // classes the scanner missed still resolve at runtime.
+    let patterns = PatternTable::from_design_system(&ds);
+    let patterns_table =
+        ConflictTable::from_classes_seeded(&ds, &union, None, patterns.family_names.clone());
+    let patterns_js = generate_js(
+        &patterns_table,
+        Some(&patterns),
+        &GenerateOptions {
+            prefix: None,
+            patterns: true,
+        },
+    );
+
+    let exact_bytes = exact_js.len();
+    let patterns_bytes = patterns_js.len();
+    println!("corpus-union exact bundle size: {exact_bytes} bytes");
+    println!("corpus-union patterns bundle size: {patterns_bytes} bytes");
     assert!(
-        bundle_bytes < 20 * 1024,
-        "corpus-union bundle must stay under 20 KB, was {bundle_bytes} bytes"
+        exact_bytes < 20 * 1024,
+        "exact corpus-union bundle must stay under 20 KB, was {exact_bytes} bytes"
+    );
+    assert!(
+        patterns_bytes < 64 * 1024,
+        "patterns corpus-union bundle must stay under 64 KB, was {patterns_bytes} bytes"
     );
 
     // Small-sample bundle: two files, ~40 classes.
@@ -94,23 +114,28 @@ fn js_parity_and_bundle_sizes() {
     cases_json.push(']');
 
     let dir = tempfile::tempdir().expect("temp dir");
-    let bundle_path = dir.path().join("twm.mjs");
-    std::fs::write(&bundle_path, &js).expect("write bundle");
+    let exact_path = dir.path().join("twm-exact.mjs");
+    std::fs::write(&exact_path, &exact_js).expect("write exact bundle");
+    let patterns_path = dir.path().join("twm-patterns.mjs");
+    std::fs::write(&patterns_path, &patterns_js).expect("write patterns bundle");
     let harness_path = dir.path().join("harness.mjs");
     let harness = format!(
         r#"
-import {{ twMerge }} from './twm.mjs';
+import {{ twMerge as exact }} from './twm-exact.mjs';
+import {{ twMerge as patterns }} from './twm-patterns.mjs';
 const cases = {cases_json};
 let failed = 0;
 for (let i = 0; i < cases.length; i++) {{
     const [input, expected] = cases[i];
-    const got = twMerge(input);
-    if (got !== expected) {{
-        failed++;
-        console.error(`FAIL ${{i}}: ${{JSON.stringify(input)}} -> ${{JSON.stringify(got)}}, expected ${{JSON.stringify(expected)}}`);
+    for (const [name, twMerge] of [['exact', exact], ['patterns', patterns]]) {{
+        const got = twMerge(input);
+        if (got !== expected) {{
+            failed++;
+            console.error(`FAIL ${{name}} ${{i}}: ${{JSON.stringify(input)}} -> ${{JSON.stringify(got)}}, expected ${{JSON.stringify(expected)}}`);
+        }}
     }}
 }}
-console.log(`PARITY ${{cases.length}} cases, ${{failed}} failures`);
+console.log(`PARITY ${{cases.length}} cases x 2 modes, ${{failed}} failures`);
 process.exit(failed > 0 ? 1 : 0);
 "#
     );
@@ -132,7 +157,7 @@ process.exit(failed > 0 ? 1 : 0);
         output.status
     );
     assert!(
-        stdout.contains(&format!("PARITY {case_count} cases, 0 failures")),
-        "expected 'PARITY {case_count} cases, 0 failures' in harness output"
+        stdout.contains(&format!("PARITY {case_count} cases x 2 modes, 0 failures")),
+        "expected 'PARITY {case_count} cases x 2 modes, 0 failures' in harness output"
     );
 }

@@ -16,7 +16,9 @@ OPTIONS
   --css <file>     extra @utility/@theme CSS to extend the design system
   --out <file>     write the generated JS bundle to <file> (default: stdout)
   --prefix <p>     only treat classes with the \`p:\` prefix as Tailwind classes
-  --patterns       emit the full design-system pattern table: unseen classes\n  (e.g. text-1000xl) still resolve like tailwind-merge (bigger bundle)
+  --no-patterns    emit only the scanned classes (smaller bundle; classes the
+                   scanner missed pass through unmerged — default is full
+                   pattern-table resolution, so unseen classes still merge)
   --check          report conflicts among used classes; exit 1 if any exist
   -h, --help       show this help
 
@@ -99,7 +101,9 @@ export function generate(options = {}) {
     if (css) args.push('--css', css);
     if (out) args.push('--out', out);
     if (prefix) args.push('--prefix', prefix);
-    if (patterns) args.push('--patterns');
+    // Patterns (unseen classes still resolve) are the default; opt out
+    // explicitly for a smaller bundle.
+    if (patterns === false) args.push('--no-patterns');
     if (check) args.push('--check');
     args.push(...sources);
 

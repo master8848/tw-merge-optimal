@@ -30,12 +30,15 @@ fn usage() -> ! {
     eprintln!(
         "twm-gen v0.1 — build-time Tailwind class-merge generator\n\
          \n\
-         usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--check] <globs-or-paths...>\n\
+         usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--no-patterns] [--check] <globs-or-paths...>\n\
          \n\
          options:\n\
          \x20 --css <file>    extra @utility/@theme CSS to extend the design system\n\
          \x20 --out <file>    write the generated JS bundle to <file> (default: stdout)\n\
          \x20 --prefix <p>    only treat classes with the `p:` prefix as Tailwind classes\n\
+         \x20 --no-patterns   emit only the scanned classes (smaller bundle; classes the\n\
+         \x20                  scanner missed pass through unmerged — default is full\n\
+         \x20                  pattern-table resolution, so unseen classes still merge)\n\
          \x20 --check         report conflicts among used classes; exit 1 if any exist\n\
          \x20 -h, --help      show this help"
     );
@@ -111,7 +114,7 @@ fn main() -> ExitCode {
                 all_classes.len(),
                 out,
                 js.len(),
-                if args.patterns { ", patterns" } else { "" }
+                if args.patterns { ", patterns" } else { ", exact" }
             );
         }
         None => print!("{js}"),
@@ -124,7 +127,9 @@ fn parse_args() -> Option<Args> {
     let mut out = None;
     let mut prefix = None;
     let mut check = false;
-    let mut patterns = false;
+    // Full pattern-table resolution is the default (unseen classes still
+    // merge correctly); --no-patterns opts out for a smaller bundle.
+    let mut patterns = true;
     let mut paths = Vec::new();
     let mut it = std::env::args().skip(1).peekable();
     while let Some(arg) = it.next() {
@@ -135,6 +140,7 @@ fn parse_args() -> Option<Args> {
             "--prefix" => prefix = Some(it.next()?),
             "--check" => check = true,
             "--patterns" => patterns = true,
+            "--no-patterns" => patterns = false,
             _ if arg.starts_with('-') && arg.len() > 1 => {
                 eprintln!("twm-gen: unknown option {arg}");
                 return None;
