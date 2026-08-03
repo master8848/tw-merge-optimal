@@ -24,13 +24,13 @@ classes).
 
 | Workload | tailwind-merge | optimal (patterns) | optimal (exact) | ratio |
 |---|---|---|---|---|
-| simple (2 classes, both caches warm) | 552k ops/s | 524k ops/s | 525k ops/s | ~parity (tw 1.05×) |
-| heavy (real-world 10-arg call, caches warm) | 387k ops/s | 379k ops/s | 379k ops/s | ~parity (tw 1.02×) |
-| corpus (349 cases, caches warm) | 59k ops/s | 51k ops/s | 52k ops/s | ~parity (tw 1.15×) |
-| collection ×1,322 (tw cache off) | 108 ops/s | 1,233 ops/s | 1,235 ops/s | **11.4×** (optimal) |
-| ultra-long list (2,400 classes, tw cache off) | 1,467 ops/s | 13,578 ops/s | 13,600 ops/s | **9.3×** (optimal) |
-| collection ×1,322 (tw cache on) | 1,362 ops/s | 1,233 ops/s | 1,235 ops/s | ~parity (tw 1.11×) |
-| ultra-long list (2,400 classes, tw cache on) | 18,685 ops/s | 13,578 ops/s | 13,600 ops/s | ~parity (tw 1.4×) |
+| simple (2 classes, both caches warm) | 540k ops/s | 516k ops/s | 513k ops/s | ~parity (tw 1.05×) |
+| heavy (real-world 10-arg call, caches warm) | 381k ops/s | 366k ops/s | 368k ops/s | ~parity (tw 1.04×) |
+| corpus (349 cases, caches warm) | 57k ops/s | 52k ops/s | 51k ops/s | ~parity (tw 1.10×) |
+| collection ×1,322 (tw cache off) | 108 ops/s | 1,219 ops/s | 1,248 ops/s | **11.3×** (optimal) |
+| ultra-long list (2,400 classes, tw cache off) | 1,459 ops/s | 13,319 ops/s | 13,170 ops/s | **9.1×** (optimal) |
+| collection ×1,322 (tw cache on) | 1,343 ops/s | 1,219 ops/s | 1,248 ops/s | ~parity (tw 1.10×) |
+| ultra-long list (2,400 classes, tw cache on) | 18,294 ops/s | 13,319 ops/s | 13,170 ops/s | ~parity (tw 1.37×) |
 
 Run twice with identical results (±0.15–0.8% relative margin of error per row); patterns
 vs exact differs by < 0.3%.
@@ -45,7 +45,8 @@ vs exact differs by < 0.3%.
 - **tw-merge-optimal wins 9–11× only where tailwind-merge's result cache can't help**
   (cache disabled, or thrashing on long/dynamic inputs): its cache is always-on and
   holds 8,192 entries; tailwind-merge's is LRU-500 (v3 default) and opt-in-offable.
-  (Earlier runs measured up to 13× on the collection workload; this run: 11.4×.)
+  (Earlier runs measured up to 13× on the collection workload; the latest clean run:
+  11.3×.)
 - **Patterns and exact modes are performance-identical** — exact mode costs nothing
   but coverage (see [size.md](size.md)).
 - **One-time init (not per-call):** tailwind-merge pays a lazy init of ~1–8 ms

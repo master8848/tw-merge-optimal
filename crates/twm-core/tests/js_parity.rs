@@ -57,6 +57,10 @@ fn js_parity_and_bundle_sizes() {
     let patterns_bytes = patterns_js.len();
     println!("corpus-union exact bundle size: {exact_bytes} bytes");
     println!("corpus-union patterns bundle size: {patterns_bytes} bytes");
+    println!(
+        "exact MC={} (patterns MC=7)",
+        mc_of(&exact_js)
+    );
     assert!(
         exact_bytes < 20 * 1024,
         "exact corpus-union bundle must stay under 20 KB, was {exact_bytes} bytes"
@@ -85,13 +89,46 @@ fn js_parity_and_bundle_sizes() {
     );
     let small_bytes = small_js.len();
     println!(
-        "small-sample bundle size: {small_bytes} bytes ({} classes)",
-        small_union.len()
+        "small-sample bundle size: {small_bytes} bytes ({} classes, MC={})",
+        small_union.len(),
+        mc_of(&small_js)
     );
     assert!(
         small_bytes < 4 * 1024,
         "small-sample bundle must stay under 4 KB, was {small_bytes} bytes"
     );
+
+    // Prefixed bundle (prefix `tw`, patterns mode): the `prefixes` corpus
+    // group. Non-prefixed tokens pass through untouched; prefixed ones merge.
+    let prefix_classes: Vec<String> = vec![
+        "tw:block".into(),
+        "tw:hidden".into(),
+        "block".into(),
+        "hidden".into(),
+        "tw:p-3".into(),
+        "tw:p-2".into(),
+        "p-3".into(),
+        "p-2".into(),
+        "tw:right-0!".into(),
+        "tw:inset-0!".into(),
+        "tw:hover:focus:right-0!".into(),
+        "tw:focus:hover:inset-0!".into(),
+    ];
+    let prefix_table = ConflictTable::from_classes_seeded(
+        &ds,
+        &prefix_classes,
+        Some("tw"),
+        patterns.family_names.clone(),
+    );
+    let prefix_js = generate_js(
+        &prefix_table,
+        Some(&patterns),
+        &GenerateOptions {
+            prefix: Some("tw"),
+            patterns: true,
+        },
+    );
+    println!("prefixed bundle size: {} bytes", prefix_js.len());
 
     // Embed all corpus cases as JSON for the Node harness.
     let mut cases_json = String::from("[");
@@ -118,11 +155,37 @@ fn js_parity_and_bundle_sizes() {
     std::fs::write(&exact_path, &exact_js).expect("write exact bundle");
     let patterns_path = dir.path().join("twm-patterns.mjs");
     std::fs::write(&patterns_path, &patterns_js).expect("write patterns bundle");
+    let prefix_path = dir.path().join("twm-prefix.mjs");
+    std::fs::write(&prefix_path, &prefix_js).expect("write prefix bundle");
     let harness_path = dir.path().join("harness.mjs");
+    let prefix_cases: &[(&str, &str)] = &[
+        ("tw:block tw:hidden", "tw:hidden"),
+        ("block hidden", "block hidden"),
+        ("tw:p-3 tw:p-2", "tw:p-2"),
+        ("p-3 p-2", "p-3 p-2"),
+        ("tw:right-0! tw:inset-0!", "tw:inset-0!"),
+        (
+            "tw:hover:focus:right-0! tw:focus:hover:inset-0!",
+            "tw:focus:hover:inset-0!",
+        ),
+    ];
+    let mut prefix_json = String::from("[");
+    for (i, (input, expected)) in prefix_cases.iter().enumerate() {
+        if i > 0 {
+            prefix_json.push(',');
+        }
+        prefix_json.push_str(&format!(
+            "[{},{}]",
+            serde_json::to_string(input).unwrap(),
+            serde_json::to_string(expected).unwrap()
+        ));
+    }
+    prefix_json.push(']');
     let harness = format!(
         r#"
-import {{ twMerge as exact }} from './twm-exact.mjs';
-import {{ twMerge as patterns }} from './twm-patterns.mjs';
+import {{ twMerge as exact, setCacheSize as exactCache }} from './twm-exact.mjs';
+import {{ twMerge as patterns, setCacheSize as patternsCache }} from './twm-patterns.mjs';
+import {{ twMerge as prefixed }} from './twm-prefix.mjs';
 const cases = {cases_json};
 let failed = 0;
 for (let i = 0; i < cases.length; i++) {{
@@ -136,7 +199,32 @@ for (let i = 0; i < cases.length; i++) {{
     }}
 }}
 console.log(`PARITY ${{cases.length}} cases x 2 modes, ${{failed}} failures`);
-process.exit(failed > 0 ? 1 : 0);
+exactCache(0);
+patternsCache(0);
+let coff = 0;
+for (let i = 0; i < cases.length; i++) {{
+    const [input, expected] = cases[i];
+    for (const [name, twMerge] of [['exact', exact], ['patterns', patterns]]) {{
+        const got = twMerge(input);
+        if (got !== expected) {{
+            coff++;
+            console.error(`FAIL(cache off) ${{name}} ${{i}}: ${{JSON.stringify(input)}} -> ${{JSON.stringify(got)}}, expected ${{JSON.stringify(expected)}}`);
+        }}
+    }}
+}}
+console.log(`CACHE_OFF_PARITY ${{cases.length}} cases x 2 modes, ${{coff}} failures`);
+const pcases = {prefix_json};
+let pfailed = 0;
+for (let i = 0; i < pcases.length; i++) {{
+    const [input, expected] = pcases[i];
+    const got = prefixed(input);
+    if (got !== expected) {{
+        pfailed++;
+        console.error(`FAIL prefixed ${{i}}: ${{JSON.stringify(input)}} -> ${{JSON.stringify(got)}}, expected ${{JSON.stringify(expected)}}`);
+    }}
+}}
+console.log(`PREFIX_PARITY ${{pcases.length}} cases, ${{pfailed}} failures`);
+process.exit(failed > 0 || coff > 0 || pfailed > 0 ? 1 : 0);
 "#
     );
     std::fs::write(&harness_path, &harness).expect("write harness");
@@ -160,4 +248,25 @@ process.exit(failed > 0 ? 1 : 0);
         stdout.contains(&format!("PARITY {case_count} cases x 2 modes, 0 failures")),
         "expected 'PARITY {case_count} cases x 2 modes, 0 failures' in harness output"
     );
+    assert!(
+        stdout.contains(&format!("CACHE_OFF_PARITY {case_count} cases x 2 modes, 0 failures")),
+        "expected 'CACHE_OFF_PARITY {case_count} cases x 2 modes, 0 failures' in harness output"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "PREFIX_PARITY {} cases, 0 failures",
+            prefix_cases.len()
+        )),
+        "expected 'PREFIX_PARITY {} cases, 0 failures' in harness output",
+        prefix_cases.len()
+    );
+}
+
+/// The emitted `MC` value from a generated bundle.
+fn mc_of(js: &str) -> String {
+    js.split("const MC=")
+        .nth(1)
+        .and_then(|s| s.split(';').next())
+        .unwrap_or("?")
+        .to_string()
 }

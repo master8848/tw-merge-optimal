@@ -232,6 +232,50 @@ impl ConflictTable {
         }
         out
     }
+
+    /// Shortest input length at which a merge call can still change the
+    /// output — the minimum length an input needs before the fast path must
+    /// hand over to the full merge. Two mechanisms change output, so both
+    /// are bounded here:
+    ///
+    /// - a conflicting pair (`a` + space + `b`, right-to-left keeps `b`):
+    ///   computed over every runtime-lookup key (entries, postfix keys,
+    ///   arbitrary fallbacks) using the family-level conflict relation (an
+    ///   edge in either direction means one order of the pair drops the
+    ///   other);
+    /// - a duplicate pair (`a a` — identical classes dedupe to one).
+    ///
+    /// `None` only when the table is empty (nothing can ever change the
+    /// output).
+    pub fn min_conflict_pair_len(&self) -> Option<usize> {
+        let w = self.family_conflicts();
+        let mut classes: Vec<(usize, u16)> = Vec::with_capacity(
+            self.entries.len() + self.postfix_entries.len() + self.arb_fallbacks.len(),
+        );
+        for (key, e) in self.entries.iter() {
+            classes.push((key.encode_utf16().count(), self.family_id_of(&e.family)));
+        }
+        for (key, e) in self.postfix_entries.iter() {
+            classes.push((key.encode_utf16().count(), self.family_id_of(&e.family)));
+        }
+        for (key, e) in self.arb_fallbacks.iter() {
+            classes.push((key.encode_utf16().count(), self.family_id_of(&e.family)));
+        }
+        let mut best = usize::MAX;
+        for i in 0..classes.len() {
+            let (la, fa) = classes[i];
+            for j in i + 1..classes.len() {
+                let (lb, fb) = classes[j];
+                if w[fa as usize].contains(&fb) || w[fb as usize].contains(&fa) {
+                    best = best.min(la + 1 + lb);
+                }
+            }
+            // Identical classes dedupe, so the fast path must not fire for
+            // inputs that could hold `a a`.
+            best = best.min(la * 2 + 1);
+        }
+        (best != usize::MAX).then_some(best)
+    }
 }
 
 fn push_unique(v: &mut Vec<u16>, id: u16) {

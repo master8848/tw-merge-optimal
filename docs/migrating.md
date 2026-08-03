@@ -13,6 +13,10 @@ own corpus. Switching takes five steps:
    import { twMerge, twJoin } from 'tw-merge-optimal'
    ```
 
+   Or skip step 2 entirely with the prebuilt full-grammar bundle:
+   `import { twMerge } from 'tw-merge-optimal/pattern'` — no plugin, no CLI, no build
+   step (see the README's [Get started](../README.md#get-started)).
+
 2. **Wire the generator into your build** so that import resolves to your
    per-project bundle. Two options:
 
@@ -38,6 +42,11 @@ own corpus. Switching takes five steps:
    config API; the one deliberate behavior change is that arbitrary properties
    (`[padding:1rem]`) now merge with the standard classes they write (`p-4`) — see
    [deviations.md](deviations.md). Roll back any time by reverting step 1.
+
+Cache tuning maps directly: tailwind-merge's `cacheSize` config option becomes
+`setCacheSize(n)` (same semantics — `0` disables caching; default 8192 vs
+tailwind-merge's 500). If you were relying on `extendTailwindMerge({ cacheSize })`,
+that's the one-line replacement.
 
 ## Use cases
 

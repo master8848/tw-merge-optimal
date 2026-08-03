@@ -10,6 +10,10 @@
             "types": "./index.d.ts",
             "default": "./index.mjs"
         },
+        "./pattern": {
+            "types": "./index.d.ts",
+            "default": "./full.mjs"
+        },
         "./vite": "./vite.mjs",
         "./webpack": "./webpack.mjs",
         "./rspack": "./rspack.mjs",
@@ -23,8 +27,11 @@
     "files": [
         "index.mjs",
         "index.d.ts",
+        "full.mjs",
         "cli.mjs",
         "install.mjs",
+        "build-wasm.mjs",
+        "wasi-runner.mjs",
         "vite.mjs",
         "webpack.mjs",
         "rspack.mjs",
@@ -34,7 +41,8 @@
         "babel.mjs"
     ],
     "scripts": {
-        "postinstall": "node install.mjs"
+        "postinstall": "node install.mjs",
+        "build:wasm": "node build-wasm.mjs"
     },
     "engines": {
         "node": ">=18"

@@ -6,7 +6,9 @@
     "scripts": {
         "bench:gen": "cargo run -p twm-core --bin bench_gen",
         "bench": "npm run bench:gen && vitest bench --no-watch",
-        "test:plugins": "node packages/tw-merge-optimal/test/vite-build.test.mjs"
+        "build:full": "npm run bench:gen && cp bench/generated/tw-merge-optimal.mjs packages/tw-merge-optimal/full.mjs",
+        "test:plugins": "node packages/tw-merge-optimal/test/vite-build.test.mjs",
+        "test:full": "node packages/tw-merge-optimal/test/full.test.mjs"
     },
     "devDependencies": {
         "vitest": "^4.1.9"

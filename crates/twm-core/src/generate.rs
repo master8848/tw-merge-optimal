@@ -39,6 +39,30 @@ pub fn generate_js(
     if let Some(p) = opts.prefix {
         js.push_str(&format!("const PREFIX={};\n", js_string(p)));
     }
+    // MC: shortest input length that can contain a conflict, derived at build
+    // time from the table (exact mode) or kept at the default-grammar floor
+    // 7 (patterns mode: the matcher can resolve unseen classes, so a
+    // table-derived min would be unsafe there).
+    let mc = if pat_mode {
+        7
+    } else {
+        match table.min_conflict_pair_len() {
+            Some(n) => n,
+            // No conflicting pair: every input short-circuits to normalize.
+            None => usize::MAX,
+        }
+    };
+    if mc == usize::MAX {
+        js.push_str("const MC=Number.MAX_SAFE_INTEGER;\n");
+    } else {
+        js.push_str(&format!("const MC={mc};\n"));
+    }
+    // Cache bound: configurable at runtime via `setCacheSize` (tailwind-merge
+    // `cacheSize` parity). 0 disables both caches (`RC` whole-call + `PC`
+    // per-class parse) — every merge recomputes, memory stays flat.
+    js.push_str(
+        "let CS=8192;export function setCacheSize(n){CS=n>0?n|0:0;RC.clear();PC.clear()}\n",
+    );
 
     // GROUPS: base class name -> family id. Postfix variants get a trailing
     // '/' key; arbitrary-value fallbacks get a 'prefix-arb' key.
@@ -224,9 +248,9 @@ pub fn generate_js(
     js.push_str(TW_JOIN_JS);
 
     if pat_mode {
-        js.push_str(&tw_merge_patterns_js(patterns.unwrap()));
+        js.push_str(&tw_merge_patterns_js(patterns.unwrap(), opts.prefix));
     } else {
-        js.push_str(TW_MERGE_JS);
+        js.push_str(&tw_merge_js(opts.prefix));
     }
     js
 }
@@ -272,14 +296,14 @@ fn js_key(s: &str) -> String {
 /// `cachedParseClassName` applies; class names repeat heavily in practice),
 /// with the memo bounded at 8192 entries to cap memory on long-lived apps.
 const PARSE_JS: &str = r#"
-const PC=new Map();function p(c){let r=PC.get(c);if(r!==undefined)return r;if(PC.size>8192)PC.clear();if(typeof PREFIX!=='undefined'){const f=PREFIX+':';if(!c.startsWith(f)){r=[0,[],c,0,0,1];PC.set(c,r);return r}c=c.slice(f.length)}const m=[];let bs=0,ps=0,ms=0,pp=-1;for(let i=0;i<c.length;i++){const ch=c[i];if(bs===0&&ps===0){if(ch===':'){m.push(c.slice(ms,i));ms=i+1;continue}if(ch==='/'&&pp<0)pp=i}if(ch==='[')bs++;else if(ch===']')bs--;else if(ch==='(')ps++;else if(ch===')')ps--}let b=ms===0?c:c.slice(ms);let im=0;if(B){if(b.endsWith('!')){b=b.slice(0,-1);im=1}else if(b.startsWith('!')){b=b.slice(1);im=1}}let po=0;if(A&&pp>ms){po=1;b=b.slice(0,pp-ms)}let ar=0;if(C){const ai=b.search(/[\[(]/);if(ai>0)ar=b.slice(0,ai)}r=[im,m,b,po,ar,0];PC.set(c,r);return r}
+const PC=new Map();function p(c){let r=PC.get(c);if(r!==undefined)return r;if(CS&&PC.size>CS)PC.clear();if(typeof PREFIX!=='undefined'){const f=PREFIX+':';if(!c.startsWith(f)){r=[0,[],c,0,0,1];if(CS)PC.set(c,r);return r}c=c.slice(f.length)}const m=[];let bs=0,ps=0,ms=0,pp=-1;for(let i=0;i<c.length;i++){const ch=c[i];if(bs===0&&ps===0){if(ch===':'){m.push(c.slice(ms,i));ms=i+1;continue}if(ch==='/'&&pp<0)pp=i}if(ch==='[')bs++;else if(ch===']')bs--;else if(ch==='(')ps++;else if(ch===')')ps--}let b=ms===0?c:c.slice(ms);let im=0;if(B){if(b.endsWith('!')){b=b.slice(0,-1);im=1}else if(b.startsWith('!')){b=b.slice(1);im=1}}let po=0;if(A&&pp>ms){po=1;b=b.slice(0,pp-ms)}let ar=0;if(C){const ai=b.search(/[\[(]/);if(ai>0)ar=b.slice(0,ai)}r=[im,m,b,po,ar,0];if(CS)PC.set(c,r);return r}
 "#;
 
 /// Patterns-mode variant of `PARSE_JS`: identical, but the result array is
 /// `[im,m,b,po,ar,ext,pf]` where `pf` is the postfix part (`/...`) when one
 /// was found, else 0.
 const PARSE_PATTERNS_JS: &str = r#"
-const PC=new Map();function p(c){let r=PC.get(c);if(r!==undefined)return r;if(PC.size>8192)PC.clear();if(typeof PREFIX!=='undefined'){const f=PREFIX+':';if(!c.startsWith(f)){r=[0,[],c,0,0,1,0];PC.set(c,r);return r}c=c.slice(f.length)}const m=[];let bs=0,ps=0,ms=0,pp=-1;for(let i=0;i<c.length;i++){const ch=c[i];if(bs===0&&ps===0){if(ch===':'){m.push(c.slice(ms,i));ms=i+1;continue}if(ch==='/'&&pp<0)pp=i}if(ch==='[')bs++;else if(ch===']')bs--;else if(ch==='(')ps++;else if(ch===')')ps--}let b=ms===0?c:c.slice(ms);let im=0;if(B){if(b.endsWith('!')){b=b.slice(0,-1);im=1}else if(b.startsWith('!')){b=b.slice(1);im=1}}let po=0;if(A&&pp>ms){po=1;b=b.slice(0,pp-ms)}let ar=0;if(C){const ai=b.search(/[\[(]/);if(ai>0)ar=b.slice(0,ai)}r=[im,m,b,po,ar,0,po?c.slice(pp):0];PC.set(c,r);return r}
+const PC=new Map();function p(c){let r=PC.get(c);if(r!==undefined)return r;if(CS&&PC.size>CS)PC.clear();if(typeof PREFIX!=='undefined'){const f=PREFIX+':';if(!c.startsWith(f)){r=[0,[],c,0,0,1,0];if(CS)PC.set(c,r);return r}c=c.slice(f.length)}const m=[];let bs=0,ps=0,ms=0,pp=-1;for(let i=0;i<c.length;i++){const ch=c[i];if(bs===0&&ps===0){if(ch===':'){m.push(c.slice(ms,i));ms=i+1;continue}if(ch==='/'&&pp<0)pp=i}if(ch==='[')bs++;else if(ch===']')bs--;else if(ch==='(')ps++;else if(ch===')')ps--}let b=ms===0?c:c.slice(ms);let im=0;if(B){if(b.endsWith('!')){b=b.slice(0,-1);im=1}else if(b.startsWith('!')){b=b.slice(1);im=1}}let po=0;if(A&&pp>ms){po=1;b=b.slice(0,pp-ms)}let ar=0;if(C){const ai=b.search(/[\[(]/);if(ai>0)ar=b.slice(0,ai)}r=[im,m,b,po,ar,0,po?c.slice(pp):0];if(CS)PC.set(c,r);return r}
 "#;
 
 /// Modifier sorting with order-sensitive anchors (port of `sort-modifiers.ts`).
@@ -297,27 +321,54 @@ function toValue(m){if(typeof m==='string')return m;let s='';for(let k=0;k<m.len
 /// conflict key = sorted modifiers + important + family. `seen` is a lazily
 /// allocated array of family keys checked with `includes` (linear scan beats
 /// a Set for the tiny per-family conflict lists) — the same trick
-/// tailwind-merge's benchmarked `mergeClassList` uses. Inputs shorter than 7
-/// chars (two classes minimum for a conflict) return trimmed+normalized
-/// before any split/parse; tokenization is a right-to-left charCode scan that
-/// slices tokens without allocating a split array.
+/// tailwind-merge's benchmarked `mergeClassList` uses. Inputs shorter than
+/// the build-time `MC` constant (the project's shortest conflicting pair)
+/// return trimmed+normalized before any split/parse; tokenization is a
+/// right-to-left charCode scan that slices tokens without allocating a split
+/// array. In prefixed bundles, tokens not carrying the prefix can never be
+/// Tailwind classes: they are emitted without parsing (identical to the
+/// external-token branch). When no prefix is configured the scan is byte-for-
+/// byte the plain loop.
 ///
 /// Whole-call results are memoized in `RC` (input -> output), the same trick
 /// as tailwind-merge's opt-in result cache — but always on, because renders
 /// (React etc.) repeat identical class strings constantly. Bounded at 8192
 /// entries like the per-class parse memo `PC`; cleared wholesale when
 /// exceeded, capping memory on long-lived apps with dynamic class strings.
-const TW_MERGE_JS: &str = r#"
-const RC=new Map();export function twMerge(...x){const l=twJoin(...x),h=RC.get(l);if(h!==undefined)return h;if(RC.size>8192)RC.clear();const t=l.trim();if(t.length<7){const r=t.replace(/\s+/g,' ');RC.set(l,r);return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;const q=p(c);if(q[5]){o=c+(o?' '+o:'');continue}let f;if(A&&q[3]&&(q[2]+'/')in G)f=G[q[2]+'/'];else if(q[2]in G)f=G[q[2]];else if(C&&q[4]&&(q[4]+'arb')in G)f=G[q[4]+'arb'];else{o=c+(o?' '+o:'');continue}const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.includes(k))continue;const cf=W[f],pre=v+(q[0]?'!':'');if(!seen)seen=[];for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}RC.set(l,o);return o}
-"#;
+/// The bound is configurable at runtime via the exported `setCacheSize(n)`
+/// (tailwind-merge `cacheSize` parity); `0` disables both caches.
+fn tw_merge_js(prefix: Option<&str>) -> String {
+    let mut js = String::from(
+        "const RC=new Map();export function twMerge(...x){const l=twJoin(...x),h=RC.get(l);if(h!==undefined)return h;if(CS&&RC.size>CS)RC.clear();const t=l.trim();if(t.length<MC){const r=t.replace(/\\s+/g,' ');if(CS)RC.set(l,r);return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
+    );
+    if let Some(p) = prefix {
+        js.push_str(&format!(
+            "if(!c.startsWith({})){{o=c+(o?' '+o:'');continue}}",
+            js_string(&format!("{p}:"))
+        ));
+    }
+    js.push_str(
+        "const q=p(c);if(q[5]){o=c+(o?' '+o:'');continue}let f;if(A&&q[3]&&(q[2]+'/')in G)f=G[q[2]+'/'];else if(q[2]in G)f=G[q[2]];else if(C&&q[4]&&(q[4]+'arb')in G)f=G[q[4]+'arb'];else{o=c+(o?' '+o:'');continue}const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.includes(k))continue;const cf=W[f],pre=v+(q[0]?'!':'');if(!seen)seen=[];for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}if(CS)RC.set(l,o);return o}",
+    );
+    js
+}
 
 /// Patterns-mode `twMerge`: same as `TW_MERGE_JS` (short-input fast path,
 /// charCode token scan, lazy `seen`) with the pattern fallback branch (D).
 /// Postfix-special clauses (font-size -> leading conflict, named containers)
 /// are emitted only when those families exist.
-fn tw_merge_patterns_js(p: &PatternTable) -> String {
+fn tw_merge_patterns_js(p: &PatternTable, prefix: Option<&str>) -> String {
     let mut js = String::from(
-        "const RC=new Map();export function twMerge(...x){const l=twJoin(...x),h=RC.get(l);if(h!==undefined)return h;if(RC.size>8192)RC.clear();const t=l.trim();if(t.length<7){const r=t.replace(/\\s+/g,' ');RC.set(l,r);return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;const q=p(c);if(q[5]){o=c+(o?' '+o:'');continue}let f,cf;",
+        "const RC=new Map();export function twMerge(...x){const l=twJoin(...x),h=RC.get(l);if(h!==undefined)return h;if(CS&&RC.size>CS)RC.clear();const t=l.trim();if(t.length<MC){const r=t.replace(/\\s+/g,' ');if(CS)RC.set(l,r);return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
+    );
+    if let Some(pfx) = prefix {
+        js.push_str(&format!(
+            "if(!c.startsWith({})){{o=c+(o?' '+o:'');continue}}",
+            js_string(&format!("{pfx}:"))
+        ));
+    }
+    js.push_str(
+        "const q=p(c);if(q[5]){o=c+(o?' '+o:'');continue}let f,cf;",
     );
     js.push_str(
         "if(A&&q[3]&&(q[2]+'/')in G)f=G[q[2]+'/'];else if(q[2]in G)f=G[q[2]];else if(C&&q[4]&&(q[4]+'arb')in G)f=G[q[4]+'arb'];else if(D){const r=m(q[2]);if(!r){o=c+(o?' '+o:'');continue}f=r[0];cf=r[1];if(A&&q[3]){",
@@ -329,7 +380,7 @@ fn tw_merge_patterns_js(p: &PatternTable) -> String {
         js.push_str("if(CT!==undefined&&CN!==undefined&&f===CT&&cn(q[2]+q[6]))f=CN,cf=W[CN];");
     }
     js.push_str(
-        "}}else{o=c+(o?' '+o:'');continue}if(cf===undefined)cf=W[f];if(cf===undefined)cf=[f];const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.includes(k))continue;const pre=v+(q[0]?'!':'');if(!seen)seen=[];for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}RC.set(l,o);return o}",
+        "}}else{o=c+(o?' '+o:'');continue}if(cf===undefined)cf=W[f];if(cf===undefined)cf=[f];const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.includes(k))continue;const pre=v+(q[0]?'!':'');if(!seen)seen=[];for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}if(CS)RC.set(l,o);return o}",
     );
     js
 }
@@ -481,6 +532,80 @@ mod tests {
             },
         );
         assert!(js.contains("const PREFIX=\"tw\""));
+        // Prefix tokenizer skip: non-prefixed tokens are emitted without
+        // parsing; the unprefixed bundle must not carry the skip.
+        assert!(
+            js.contains("if(!c.startsWith(\"tw:\")){o=c+(o?' '+o:'');continue}"),
+            "prefixed bundle must skip non-prefixed tokens before parsing"
+        );
+        let plain = generate_js(
+            &t,
+            None,
+            &GenerateOptions {
+                prefix: None,
+                patterns: false,
+            },
+        );
+        assert!(
+            !plain.contains("if(!c.startsWith(\"tw:\"))"),
+            "unprefixed bundle must not contain the prefix skip"
+        );
+    }
+
+    #[test]
+    fn mc_exact_table_derived_patterns_floor() {
+        let ds = crate::default_design_system();
+        let classes: Vec<String> = vec!["overflow-x-auto".into(), "overflow-x-hidden".into()];
+        let t = ConflictTable::from_classes(&ds, &classes, None);
+        // conflict pair: 15+1+16 = 32; duplicate pair of the shorter class:
+        // 2*15+1 = 31 — the duplicate bound wins, so MC = 31.
+        assert_eq!(t.min_conflict_pair_len(), Some(31));
+        let exact = generate_js(
+            &t,
+            None,
+            &GenerateOptions {
+                prefix: None,
+                patterns: false,
+            },
+        );
+        assert!(exact.contains("const MC=31;"));
+        let pat = PatternTable::from_design_system(&ds);
+        let tp = ConflictTable::from_classes_seeded(&ds, &classes, None, pat.family_names.clone());
+        let patterns = generate_js(
+            &tp,
+            Some(&pat),
+            &GenerateOptions {
+                prefix: None,
+                patterns: true,
+            },
+        );
+        assert!(
+            patterns.contains("const MC=7;"),
+            "patterns mode must keep the default-grammar floor, not the table-derived min"
+        );
+    }
+
+    #[test]
+    fn mc_sentinel_when_no_conflicting_pair() {
+        // Empty table: nothing can ever merge, sentinel fires.
+        let t = table(&[]);
+        assert_eq!(t.min_conflict_pair_len(), None);
+        let js = generate_js(
+            &t,
+            None,
+            &GenerateOptions {
+                prefix: None,
+                patterns: false,
+            },
+        );
+        assert!(js.contains("const MC=Number.MAX_SAFE_INTEGER;"));
+        // No conflicts, but duplicates still dedupe: "p-2 p-2" (7 chars)
+        // must reach the full merge, so the duplicate bound (2*3+1 = 7) is
+        // the minimum even without any conflicting pair.
+        let t = table(&["p-2", "block"]);
+        assert_eq!(t.min_conflict_pair_len(), Some(7));
+        let t = table(&["p-1", "p-2"]);
+        assert_eq!(t.min_conflict_pair_len(), Some(7));
     }
 
     #[test]

@@ -35,7 +35,7 @@ whole-call result cache.
 - **Fast** — 9–11× faster than tailwind-merge on cold/dynamic inputs (cache off /
   thrashing); parity on typical short calls — and the always-on 8,192-entry result
   cache makes repeated renders a single lookup ([docs/performance.md](docs/performance.md)).
-- **Tiny** — exact mode (`--no-patterns`) emits only the scanned classes: 3.4 KB
+- **Tiny** — exact mode (`--no-patterns`) emits only the scanned classes: 3.5 KB
   (small sample), ~15–20 KB on the full corpus/bench unions ([docs/size.md](docs/size.md)).
 - **`--check` CI conflict gating** — fails the build when conflicting classes are used.
 - **Bundler plugins** — Vite, Rspack, Rsbuild, webpack, Bun, Next.js, Babel.
@@ -95,6 +95,35 @@ No bundler? Generate a bundle from the CLI and import it directly:
 ```sh
 twm-gen --out src/tw-merge.mjs "src/**/*.{ts,tsx}"
 ```
+
+The output is a **plain static ESM file** — no imports, no WASM, no config. Run
+`twm-gen` once, commit the file, and there is no build step at all: no plugin,
+no bundler integration, nothing to run at build or runtime:
+
+```js
+// src/tw-merge.mjs — the committed, generated bundle
+import { twMerge, twJoin } from './src/tw-merge.mjs'
+```
+
+Regenerate whenever your design system or class usage changes.
+
+### Drop-in sub-import (patterns mode, zero setup)
+
+`tw-merge-optimal/pattern` ships a **prebuilt patterns-mode bundle** — the full
+design-system grammar plus a 962-class table — so any class the design system
+knows resolves at runtime. No plugin, no generation step:
+
+```js
+import { twMerge, twJoin } from 'tw-merge-optimal/pattern'
+```
+
+Verified against the full 349-case corpus. Patterns mode is also the mode the
+CLI and bundler plugins use, so the same bundle **optimized per project**
+(only your classes, only the feature flags you use — no prefix machinery if
+you don't use prefixes, etc.) drops in with identical semantics. Cache bound
+is runtime-configurable too: `setCacheSize(0)` disables caching,
+`setCacheSize(500)` matches tailwind-merge's default — see
+[docs/runtime.md](docs/runtime.md).
 
 ## Documentation
 

@@ -25,6 +25,8 @@ const OS=new Set([...]);       // order-sensitive modifiers
 function sm(x){...}            // sort modifiers
 function twJoin(...x){...}     // clsx-style join
 const RC=new Map();            // result memo
+let CS=8192; export function setCacheSize(n){...} // cache bound (0 = off)
+const MC=7;                    // short-input fast-path threshold (exact mode: table-derived)
 function m(v){...}             // pattern matcher         (patterns mode)
 const THS=[]; function th(i){...} // lazy theme sets      (patterns mode)
 export function twMerge(...x){...}
@@ -119,8 +121,9 @@ classes are marked external (`ext=1`) and pass through untouched.
 Result array: `[important, modifiers, base, postfix_present, arb_prefix, ext]`
 (patterns mode adds `pf` — the raw postfix part, needed for named containers).
 
-Results are memoized in `PC` (bounded at 8192 entries, cleared wholesale when
-exceeded) — class names repeat heavily in real renders.
+Results are memoized in `PC` (bounded by `setCacheSize`, default 8192,
+cleared wholesale when exceeded) — class names repeat heavily in real
+renders.
 
 ### `sm(x)` — sort modifiers
 
@@ -152,15 +155,20 @@ Only runs on a `G` miss, so the O(1) table stays the hot path.
 ```
 1. l = twJoin(...x)              — flatten + join arguments
 2. RC memo: if l was merged before, return the cached string (always on,
-   bounded at 8192, cleared when exceeded)
+   bounded by setCacheSize, default 8192, cleared when exceeded)
 3. t = l.trim()
-4. short-input fast path: t.length < 7 → collapse whitespace, done
-   (the two shortest classes that can conflict are p-2 p-1 = 7 chars)
+4. short-input fast path: t.length < MC → collapse whitespace, done
+   (MC is generated at build time: the project's shortest pair that the
+   merge can change — a conflicting pair OR a duplicate pair. Patterns
+   mode keeps the default-grammar floor 7, because the matcher can still
+   resolve unseen classes; exact mode computes it from the table)
 5. tokenize right-to-left via charCode scan (whitespace = char codes ≤ 32),
    no split() array allocated
 6. for each class (right-to-left, last wins):
      q = p(c)
      if external (q[5]) or not in G/m → keep, continue
+     (in prefixed bundles, tokens not carrying the prefix are emitted
+     without even parsing — they can never be Tailwind classes)
      f = G lookup, in order:
          postfix variant  (A && q[3] && 'base/' in G)
          exact base       (base in G)
@@ -177,6 +185,28 @@ Only runs on a `G` miss, so the O(1) table stays the hot path.
 than a `Set` for the tiny per-family conflict lists (the same trick
 tailwind-merge's benchmarked `mergeClassList` uses).
 
+## Caches
+
+Two caches, both bounded by the same runtime-configurable size:
+
+- **`RC`** — whole-call result memo (input string → output). Always on,
+  because React-style renders repeat identical class strings constantly.
+- **`PC`** — per-class parse memo (class string → parse result array).
+
+```js
+import { twMerge, setCacheSize } from 'tw-merge-optimal'
+
+setCacheSize(500)   // tailwind-merge's default bound
+setCacheSize(0)     // disable both caches — every merge recomputes
+setCacheSize(8192)  // default
+```
+
+`setCacheSize` clamps negatives to `0`, clears both maps, and `0` leaves the
+maps permanently empty (memory stays flat, correctness unchanged — the
+corpus is re-verified with caching off). This is tailwind-merge `cacheSize`
+parity, minus the config API: the default (8192) beats tailwind-merge's
+LRU-500 because repeated renders hit a larger working set.
+
 ## Mode comparison
 
 | | Exact (`--no-patterns`) | Patterns (default) |
@@ -184,7 +214,7 @@ tailwind-merge's benchmarked `mergeClassList` uses).
 | Tables | `G`, `W` | `G`, `W`, `FN`, `PR`, `W2`, `TH`, `KW`, `P` |
 | Unseen classes | pass through unmerged (safe) | resolved by `m()` — full tailwind-merge-style heuristics |
 | Flags | `A`,`B`,`C` | `A`,`B`,`C`,`D` |
-| Bundle size | exact only (3.4 KB sample, ~15 KB corpus union, ~20 KB bench union) | full design-system grammar (62.5 KB raw / 17.1 KB gzip) |
+| Bundle size | exact only (3.5 KB sample, ~15.2 KB corpus union, ~20.2 KB bench union) | full design-system grammar (62.6 KB raw / 17.2 KB gzip) |
 | Correctness guarantee | scanned classes only | entire design system |
 
 Both modes produce **byte-identical output** on every class the exact mode

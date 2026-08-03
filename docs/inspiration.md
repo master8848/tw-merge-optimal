@@ -53,7 +53,7 @@ The layer this project actually competes in:
 |---|---|---|
 | [tailwind-merge](https://github.com/dcastil/tailwind-merge) | Hand-maintained class-group config + trie-based parser, shipped as JS | ~103 KB raw / ~17.4 KB gzip full bundle; ~57.8M weekly downloads — the de-facto standard |
 | [tw-merge](https://www.npmjs.com/package/tw-merge) (illiaChaban) | "Framework agnostic, based on css file" — generates a minimized config from your `index.css`, merges on a last-class-wins basis | Generated JS config object |
-| **tw-merge-optimal** | Build-time scan (tailwindcss-oxide) + conflict groups derived from generated CSS, emitted as static-data ESM | ~2.2 KB fixed runtime + tables; 3.4 KB sample / ~20 KB exact (962 classes), 62.5 KB raw / 17.1 KB gzip patterns |
+| **tw-merge-optimal** | Build-time scan (tailwindcss-oxide) + conflict groups derived from generated CSS, emitted as static-data ESM | ~2.2 KB fixed runtime + tables; 3.5 KB sample / ~20 KB exact (962 classes), 62.6 KB raw / 17.2 KB gzip patterns |
 
 tw-merge is the closest sibling in spirit: both derive merge knowledge from
 the design system instead of a hand-maintained class map. The difference is
@@ -103,7 +103,7 @@ write).
 - **Per-project bundles**: only the classes your project uses are emitted
   (plus the full pattern grammar by default so unseen classes still resolve),
   reaching gzip-parity with tailwind-merge's full bundle in patterns mode
-  (~17.1 vs 17.4 KB) and a few KB in exact mode.
+  (~17.2 vs 17.4 KB) and a few KB in exact mode.
 
 ## Credits & attribution
 
