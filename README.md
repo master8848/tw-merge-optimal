@@ -264,7 +264,8 @@ node bench/verify.mjs
   colors, content-utilities, pseudo-variants, modifiers (runtime cases),
   important-modifier, arbitrary-values, arbitrary-variants, arbitrary-properties,
   prefixes, tailwind-css-versions (v3.3–v4.3, all cases), array-values,
-  docs-examples, tw-join. **335 assertions, 56 test groups — all green.**
+  docs-examples, tw-join — plus the `deviation_arbitrary_property_merging`
+  group. **349 assertions, 57 test groups — all green.**
 - `crates/twm-core/tests/validators_truth.rs` — the `validators.test.ts` truth tables
   (isArbitraryLength, isArbitraryNumber, isArbitraryColor, isFraction, isInteger,
   isNumber, isPercent, isTshirtSize, isArbitraryShadow, isArbitraryVariable*,
