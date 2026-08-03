@@ -3,17 +3,30 @@
 //! markers. Every corpus test exercises these truth tables via resolution.
 
 use regex::Regex;
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 
-fn re(pattern: &str) -> Regex {
-    Regex::new(pattern).unwrap()
+/// Compiled-regex cache: validators run per candidate × alternative at build
+/// time, so `Regex::new` must not run per call. Patterns are `'static`, so
+/// the cache lives for the process lifetime (each distinct pattern leaks one
+/// compiled regex — a handful, bounded).
+fn re(pattern: &'static str) -> &'static Regex {
+    static CACHE: LazyLock<Mutex<HashMap<&'static str, &'static Regex>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    let mut cache = CACHE.lock().unwrap();
+    if let Some(r) = cache.get(pattern) {
+        return r;
+    }
+    let r: &'static Regex = Box::leak(Box::new(Regex::new(pattern).unwrap()));
+    cache.insert(pattern, r);
+    r
 }
 
 const ARBITRARY_VALUE_RE: &str = r"^\[(?:(\w[\w-]*):)?(.+)\]$";
 const ARBITRARY_VARIABLE_RE: &str = r"^\((?:(\w[\w-]*):)?(.+)\)$";
 const FRACTION_RE: &str = r"^\d+(?:\.\d+)?/\d+(?:\.\d+)?$";
 const TSHIRT_UNIT_RE: &str = r"^(\d+(\.\d+)?)?(xs|sm|md|lg|xl)$";
-const LENGTH_UNIT_RE: &str =
-    r"\d+(%|px|r?em|[sdl]?v([hwib]|min|max)|pt|pc|in|cm|mm|cap|ch|ex|r?lh|cq(w|h|i|b|min|max))|\b(calc|min|max|clamp)\(.+\)|^0$";
+const LENGTH_UNIT_RE: &str = r"\d+(%|px|r?em|[sdl]?v([hwib]|min|max)|pt|pc|in|cm|mm|cap|ch|ex|r?lh|cq(w|h|i|b|min|max))|\b(calc|min|max|clamp)\(.+\)|^0$";
 const COLOR_FUNCTION_RE: &str = r"^(rgba?|hsla?|hwb|(ok)?(lab|lch)|color-mix)\(.+\)$";
 // Shadow always begins with x and y offset separated by underscore, optionally prepended by inset.
 const SHADOW_RE: &str = r"^(inset_)?-?((\d+)?\.?(\d+)[a-z]+|0)_-?((\d+)?\.?(\d+)[a-z]+|0)";
@@ -119,7 +132,7 @@ pub fn is_label_shadow(label: &str) -> bool {
 }
 
 pub fn is_arbitrary_length(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, v)| {
+    get_arbitrary_parts(value).is_some_and(|(label, v)| {
         if label.is_empty() {
             is_length_only(v)
         } else {
@@ -129,7 +142,7 @@ pub fn is_arbitrary_length(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_number(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, v)| {
+    get_arbitrary_parts(value).is_some_and(|(label, v)| {
         if label.is_empty() {
             is_number(v)
         } else {
@@ -139,17 +152,19 @@ pub fn is_arbitrary_number(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_size(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, _)| !label.is_empty() && is_label_size(label))
+    get_arbitrary_parts(value).is_some_and(|(label, _)| {
+        !label.is_empty() && is_label_size(label)
+    })
 }
 
 pub fn is_arbitrary_position(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, _)| {
+    get_arbitrary_parts(value).is_some_and(|(label, _)| {
         !label.is_empty() && is_label_position(label)
     })
 }
 
 pub fn is_arbitrary_image(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, v)| {
+    get_arbitrary_parts(value).is_some_and(|(label, v)| {
         if label.is_empty() {
             is_image(v)
         } else {
@@ -159,7 +174,7 @@ pub fn is_arbitrary_image(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_shadow(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, v)| {
+    get_arbitrary_parts(value).is_some_and(|(label, v)| {
         if label.is_empty() {
             is_shadow(v)
         } else {
@@ -169,7 +184,7 @@ pub fn is_arbitrary_shadow(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_weight(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, _)| {
+    get_arbitrary_parts(value).is_some_and(|(label, _)| {
         if label.is_empty() {
             true
         } else {
@@ -179,8 +194,7 @@ pub fn is_arbitrary_weight(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_family_name(value: &str) -> bool {
-    get_arbitrary_parts(value)
-        .map_or(false, |(label, _)| label == "family-name")
+    get_arbitrary_parts(value).is_some_and(|(label, _)| label == "family-name")
 }
 
 pub fn is_arbitrary_string(value: &str) -> bool {
@@ -188,29 +202,29 @@ pub fn is_arbitrary_string(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_angle(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, _)| label.is_empty() || label == "angle")
+    get_arbitrary_parts(value).is_some_and(|(label, _)| label.is_empty() || label == "angle")
 }
 
 pub fn is_arbitrary_time(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, _)| label.is_empty() || label == "time")
+    get_arbitrary_parts(value).is_some_and(|(label, _)| label.is_empty() || label == "time")
 }
 
 pub fn is_arbitrary_ratio(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, _)| label.is_empty() || label == "ratio")
+    get_arbitrary_parts(value).is_some_and(|(label, _)| label.is_empty() || label == "ratio")
 }
 
 pub fn is_arbitrary_ident(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, _)| {
+    get_arbitrary_parts(value).is_some_and(|(label, _)| {
         label.is_empty() || label == "custom-ident"
     })
 }
 
 pub fn is_arbitrary_url(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, _)| label.is_empty() || label == "url")
+    get_arbitrary_parts(value).is_some_and(|(label, _)| label.is_empty() || label == "url")
 }
 
 pub fn is_arbitrary_percent(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, v)| {
+    get_arbitrary_parts(value).is_some_and(|(label, v)| {
         if label.is_empty() {
             is_percent(v)
         } else {
@@ -220,7 +234,7 @@ pub fn is_arbitrary_percent(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_integer(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, v)| {
+    get_arbitrary_parts(value).is_some_and(|(label, v)| {
         if label.is_empty() {
             is_number(v)
         } else {
@@ -230,7 +244,7 @@ pub fn is_arbitrary_integer(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_fraction(value: &str) -> bool {
-    get_arbitrary_parts(value).map_or(false, |(label, v)| {
+    get_arbitrary_parts(value).is_some_and(|(label, v)| {
         if label.is_empty() {
             is_fraction(v)
         } else {
@@ -254,32 +268,27 @@ pub fn is_arbitrary_any(value: &str) -> bool {
 // Arbitrary-variable variants.
 
 pub fn is_arbitrary_variable_length(value: &str) -> bool {
-    get_arbitrary_variable_parts(value)
-        .map_or(false, |(label, _)| label == "length")
+    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| label == "length")
 }
 
 pub fn is_arbitrary_variable_family_name(value: &str) -> bool {
-    get_arbitrary_variable_parts(value)
-        .map_or(false, |(label, _)| label == "family-name")
+    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| label == "family-name")
 }
 
 pub fn is_arbitrary_variable_position(value: &str) -> bool {
-    get_arbitrary_variable_parts(value)
-        .map_or(false, |(label, _)| is_label_position(label))
+    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| is_label_position(label))
 }
 
 pub fn is_arbitrary_variable_size(value: &str) -> bool {
-    get_arbitrary_variable_parts(value)
-        .map_or(false, |(label, _)| is_label_size(label))
+    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| is_label_size(label))
 }
 
 pub fn is_arbitrary_variable_image(value: &str) -> bool {
-    get_arbitrary_variable_parts(value)
-        .map_or(false, |(label, _)| is_label_image(label))
+    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| is_label_image(label))
 }
 
 pub fn is_arbitrary_variable_shadow(value: &str) -> bool {
-    get_arbitrary_variable_parts(value).map_or(false, |(label, _)| {
+    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| {
         if label.is_empty() {
             true
         } else {
@@ -289,7 +298,7 @@ pub fn is_arbitrary_variable_shadow(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_variable_weight(value: &str) -> bool {
-    get_arbitrary_variable_parts(value).map_or(false, |(label, _)| {
+    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| {
         if label.is_empty() {
             true
         } else {
@@ -299,38 +308,38 @@ pub fn is_arbitrary_variable_weight(value: &str) -> bool {
 }
 
 pub fn is_arbitrary_variable_angle(value: &str) -> bool {
-    get_arbitrary_variable_parts(value).map_or(false, |(label, _)| {
-        label.is_empty() || label == "angle"
-    })
+    get_arbitrary_variable_parts(value)
+        .is_some_and(|(label, _)| label.is_empty() || label == "angle")
 }
 
 pub fn is_arbitrary_variable_time(value: &str) -> bool {
     get_arbitrary_variable_parts(value)
-        .map_or(false, |(label, _)| label.is_empty() || label == "time")
+        .is_some_and(|(label, _)| label.is_empty() || label == "time")
 }
 
 pub fn is_arbitrary_variable_ident(value: &str) -> bool {
-    get_arbitrary_variable_parts(value)
-        .map_or(false, |(label, _)| label.is_empty() || label == "custom-ident")
+    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| {
+        label.is_empty() || label == "custom-ident"
+    })
 }
 
 pub fn is_arbitrary_variable_url(value: &str) -> bool {
     get_arbitrary_variable_parts(value)
-        .map_or(false, |(label, _)| label.is_empty() || label == "url")
+        .is_some_and(|(label, _)| label.is_empty() || label == "url")
 }
 
 pub fn is_arbitrary_variable_percent(value: &str) -> bool {
-    get_arbitrary_variable_parts(value).map_or(false, |(label, _)| label == "percentage")
+    get_arbitrary_variable_parts(value).is_some_and(|(label, _)| label == "percentage")
 }
 
 pub fn is_arbitrary_variable_number(value: &str) -> bool {
     get_arbitrary_variable_parts(value)
-        .map_or(false, |(label, _)| label == "number" || label == "integer")
+        .is_some_and(|(label, _)| label == "number" || label == "integer")
 }
 
 pub fn is_arbitrary_variable_fraction(value: &str) -> bool {
     get_arbitrary_variable_parts(value)
-        .map_or(false, |(label, _)| label == "number" || label == "ratio")
+        .is_some_and(|(label, _)| label == "number" || label == "ratio")
 }
 
 pub fn is_arbitrary_variable_string(value: &str) -> bool {

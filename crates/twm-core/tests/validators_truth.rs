@@ -12,7 +12,14 @@ fn is_any() {
 
 #[test]
 fn is_any_non_arbitrary() {
-    for v in ["test", "1234-hello-world", "[hello", "hello]", "[)", "(hello]"] {
+    for v in [
+        "test",
+        "1234-hello-world",
+        "[hello",
+        "hello]",
+        "[)",
+        "(hello]",
+    ] {
         assert!(v::is_any_non_arbitrary(v), "{v}");
     }
     for v in ["[test]", "[label:test]", "(test)", "(label:test)"] {
@@ -165,7 +172,12 @@ fn is_arbitrary_size() {
 
 #[test]
 fn is_arbitrary_value() {
-    for v in ["[1]", "[bla]", "[not-an-arbitrary-value?]", "[auto,auto,minmax(0,1fr),calc(100vw-50%)]"] {
+    for v in [
+        "[1]",
+        "[bla]",
+        "[not-an-arbitrary-value?]",
+        "[auto,auto,minmax(0,1fr),calc(100vw-50%)]",
+    ] {
         assert!(v::is_arbitrary_value(v), "{v}");
     }
     for v in ["[]", "[1", "1]", "1", "one", "o[n]e"] {
@@ -269,8 +281,17 @@ fn is_integer() {
         assert!(v::is_integer(v), "{v}");
     }
     for v in [
-        "[8312]", "[2]", "[8312px]", "[8312%]", "[8312rem]", "8312.2", "1.2", "one", "1/2",
-        "1%", "1px",
+        "[8312]",
+        "[2]",
+        "[8312px]",
+        "[8312%]",
+        "[8312rem]",
+        "8312.2",
+        "1.2",
+        "one",
+        "1/2",
+        "1%",
+        "1px",
     ] {
         assert!(!v::is_integer(v), "{v}");
     }
@@ -282,7 +303,15 @@ fn is_number() {
         assert!(v::is_number(v), "{v}");
     }
     for v in [
-        "[8312]", "[2]", "[8312px]", "[8312%]", "[8312rem]", "one", "1/2", "1%", "1px",
+        "[8312]",
+        "[2]",
+        "[8312px]",
+        "[8312%]",
+        "[8312rem]",
+        "one",
+        "1/2",
+        "1%",
+        "1px",
     ] {
         assert!(!v::is_number(v), "{v}");
     }
@@ -300,7 +329,9 @@ fn is_percent() {
 
 #[test]
 fn is_tshirt_size() {
-    for v in ["xs", "sm", "md", "lg", "xl", "2xl", "2.5xl", "10xl", "2xs", "2lg"] {
+    for v in [
+        "xs", "sm", "md", "lg", "xl", "2xl", "2.5xl", "10xl", "2xs", "2lg",
+    ] {
         assert!(v::is_tshirt_size(v), "{v}");
     }
     for v in ["", "hello", "1", "xl3", "2xl3", "-xl", "[sm]"] {

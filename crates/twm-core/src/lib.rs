@@ -8,6 +8,7 @@ pub mod css;
 pub mod families;
 pub mod generate;
 pub mod merge;
+pub mod patterns;
 pub mod scan;
 pub mod theme;
 pub mod utility;
@@ -17,6 +18,7 @@ pub use candidate::{parse_class_name, sort_modifiers, ParsedClass, ORDER_SENSITI
 pub use conflict::{conflict_key, ClassKey, ConflictTable};
 pub use generate::{generate_js, GenerateOptions};
 pub use merge::{tw_join, tw_merge, JoinValue};
+pub use patterns::{type_code, PatternAlt, PatternTable, PatternUtility};
 pub use theme::Theme;
 pub use utility::{Alternative, DesignSystem, Resolved, SpecItem, ValueSpec};
 
@@ -38,7 +40,11 @@ pub fn default_design_system() -> DesignSystem {
 
 /// Build a design system from explicit CSS sources. `utilities_css` entries
 /// are parsed in order; later sources add resolution alternatives.
-pub fn design_system_with_css(theme_css: &str, utilities_css: &str, extra_css: &str) -> DesignSystem {
+pub fn design_system_with_css(
+    theme_css: &str,
+    utilities_css: &str,
+    extra_css: &str,
+) -> DesignSystem {
     let theme_prog = css::parse(theme_css);
     let mut utilities = Vec::new();
     utilities.extend(css::parse(utilities_css).utilities);

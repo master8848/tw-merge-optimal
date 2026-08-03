@@ -17,7 +17,8 @@ mod corpus_data;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use twm_core::{generate_js, ConflictTable, GenerateOptions};
+use twm_core::generate::{generate_js, js_string, GenerateOptions};
+use twm_core::ConflictTable;
 
 fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -75,9 +76,20 @@ fn main() {
         resolved,
         bench_classes.len()
     );
-    eprintln!("bench_gen: table: {} classes, {} families", classes.len(), table.family_names.len());
+    eprintln!(
+        "bench_gen: table: {} classes, {} families",
+        classes.len(),
+        table.family_names.len()
+    );
 
-    let js = generate_js(&table, &GenerateOptions { prefix: None });
+    let js = generate_js(
+        &table,
+        None,
+        &GenerateOptions {
+            prefix: None,
+            patterns: false,
+        },
+    );
     let out_dir = root.join("bench/generated");
     std::fs::create_dir_all(&out_dir).expect("create bench/generated");
     let bundle = out_dir.join("tw-merge-optimal.mjs");
@@ -95,7 +107,7 @@ fn main() {
             }
             first = false;
             n_cases += 1;
-            cases.push_str(&format!("[{},{}]", json_str(input), json_str(expected)));
+            cases.push_str(&format!("[{},{}]", js_string(input), js_string(expected)));
         }
     }
     cases.push(']');
@@ -116,21 +128,4 @@ fn quoted_strings(raw: &str) -> Vec<String> {
         .step_by(2)
         .map(|s| s.to_string())
         .collect()
-}
-
-fn json_str(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            _ => out.push(c),
-        }
-    }
-    out.push('"');
-    out
 }

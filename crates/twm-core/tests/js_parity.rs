@@ -30,7 +30,14 @@ fn js_parity_and_bundle_sizes() {
     let ds = common::design_system();
     let union = corpus_union();
     let table = ConflictTable::from_classes(&ds, &union, None);
-    let js = generate_js(&table, &GenerateOptions { prefix: None });
+    let js = generate_js(
+        &table,
+        None,
+        &GenerateOptions {
+            prefix: None,
+            patterns: false,
+        },
+    );
 
     let bundle_bytes = js.len();
     println!("corpus-union bundle size: {bundle_bytes} bytes");
@@ -48,9 +55,19 @@ fn js_parity_and_bundle_sizes() {
         .map(|s| s.to_string())
         .collect();
     let small_table = ConflictTable::from_classes(&ds, &small_union, None);
-    let small_js = generate_js(&small_table, &GenerateOptions { prefix: None });
+    let small_js = generate_js(
+        &small_table,
+        None,
+        &GenerateOptions {
+            prefix: None,
+            patterns: false,
+        },
+    );
     let small_bytes = small_js.len();
-    println!("small-sample bundle size: {small_bytes} bytes ({} classes)", small_union.len());
+    println!(
+        "small-sample bundle size: {small_bytes} bytes ({} classes)",
+        small_union.len()
+    );
     assert!(
         small_bytes < 4 * 1024,
         "small-sample bundle must stay under 4 KB, was {small_bytes} bytes"

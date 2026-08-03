@@ -9,7 +9,7 @@ use std::collections::HashSet;
 /// Merge a class list string, right-to-left, last class wins.
 pub fn tw_merge(table: &ConflictTable, class_list: &str, prefix: Option<&str>) -> String {
     let mut class_groups_in_conflict: HashSet<String> = HashSet::new();
-    let class_names: Vec<&str> = class_list.trim().split_whitespace().collect();
+    let class_names: Vec<&str> = class_list.split_whitespace().collect();
     let mut result: Vec<&str> = Vec::with_capacity(class_names.len());
 
     for index in (0..class_names.len()).rev() {
@@ -50,9 +50,7 @@ pub fn tw_merge(table: &ConflictTable, class_list: &str, prefix: Option<&str>) -
         for &fid in &key.conflict_ids {
             class_groups_in_conflict.insert(format!(
                 "{}{}{}",
-                modifier_id,
-                important,
-                table.family_names[fid as usize]
+                modifier_id, important, table.family_names[fid as usize]
             ));
         }
 
@@ -135,15 +133,15 @@ mod tests {
 
     #[test]
     fn merges_basic() {
-        let t = table(&["inline".into(), "block".into()]);
+        let t = table(&["inline", "block"]);
         assert_eq!(tw_merge(&t, "inline block", None), "block");
-        let t = table(&["p-2".into(), "p-4".into()]);
+        let t = table(&["p-2", "p-4"]);
         assert_eq!(tw_merge(&t, "p-2 p-4", None), "p-4");
     }
 
     #[test]
     fn merges_sides() {
-        let t = table(&["px-2".into(), "pr-4".into(), "p-1".into()]);
+        let t = table(&["px-2", "pr-4", "p-1"]);
         assert_eq!(tw_merge(&t, "pr-4 px-2", None), "px-2");
         assert_eq!(tw_merge(&t, "px-2 pr-4", None), "px-2 pr-4");
         assert_eq!(tw_merge(&t, "px-2 p-1", None), "p-1");
@@ -153,12 +151,12 @@ mod tests {
     #[test]
     fn modifiers() {
         let t = table(&[
-            "hover:p-2".into(),
-            "hover:focus:p-2".into(),
-            "focus:hover:p-2".into(),
-            "hover:focus:p-3".into(),
-            "hover:focus:p-4".into(),
-            "focus:hover:p-4".into(),
+            "hover:p-2",
+            "hover:focus:p-2",
+            "focus:hover:p-2",
+            "hover:focus:p-3",
+            "hover:focus:p-4",
+            "focus:hover:p-4",
         ]);
         assert_eq!(
             tw_merge(&t, "hover:focus:p-2 focus:hover:p-4", None),
@@ -172,8 +170,14 @@ mod tests {
 
     #[test]
     fn joins() {
-        let nested: &[JoinValue] = &[JoinValue::Str("foo"), JoinValue::Nested(&[JoinValue::Str("bar"), JoinValue::Str("")])];
-        assert_eq!(tw_join(&[JoinValue::Str("a"), JoinValue::Nested(nested)]), "a foo bar");
+        let nested: &[JoinValue] = &[
+            JoinValue::Str("foo"),
+            JoinValue::Nested(&[JoinValue::Str("bar"), JoinValue::Str("")]),
+        ];
+        assert_eq!(
+            tw_join(&[JoinValue::Str("a"), JoinValue::Nested(nested)]),
+            "a foo bar"
+        );
         assert_eq!(tw_join(&[JoinValue::Str("")]), "");
     }
 }

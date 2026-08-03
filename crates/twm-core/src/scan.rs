@@ -31,11 +31,18 @@ pub fn scan_content(path: &Path, content: &[u8]) -> FileScan {
         if let Extracted::Candidate(bytes) = hit {
             let offset = bytes.as_ptr() as usize - processed.as_ptr() as usize;
             if let Ok(s) = std::str::from_utf8(bytes) {
-                candidates.push(CandidateHit { class: s.to_string(), offset });
+                candidates.push(CandidateHit {
+                    class: s.to_string(),
+                    offset,
+                });
             }
         }
     }
-    FileScan { path: path.to_string_lossy().into_owned(), content: processed, candidates }
+    FileScan {
+        path: path.to_string_lossy().into_owned(),
+        content: processed,
+        candidates,
+    }
 }
 
 fn pre_process(content: &[u8], extension: &str) -> Vec<u8> {

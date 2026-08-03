@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const THIS_DIR = dirname(fileURLToPath(import.meta.url));
@@ -16,7 +16,7 @@ OPTIONS
   --css <file>     extra @utility/@theme CSS to extend the design system
   --out <file>     write the generated JS bundle to <file> (default: stdout)
   --prefix <p>     only treat classes with the \`p:\` prefix as Tailwind classes
-  --patterns       treat the paths as glob patterns (default: literal paths)
+  --patterns       emit the full design-system pattern table: unseen classes\n  (e.g. text-1000xl) still resolve like tailwind-merge (bigger bundle)
   --check          report conflicts among used classes; exit 1 if any exist
   -h, --help       show this help
 
@@ -61,6 +61,29 @@ export function defaultOut() {
     return fileURLToPath(new URL('./generated.mjs', import.meta.url));
 }
 
+export const DEFAULT_SOURCES = [
+    'src/**/*.{ts,tsx,js,jsx,vue,svelte,astro,html,css}',
+    'app/**/*.{ts,tsx,js,jsx,vue,svelte,astro,html,css}',
+    'pages/**/*.{ts,tsx,js,jsx,vue,svelte,astro,html,css}',
+    'components/**/*.{ts,tsx,js,jsx,vue,svelte,astro,html,css}',
+];
+
+export const IMPORT_IDS = [
+    'tw-merge-optimal',
+    'tw-merge-optimal/index.mjs',
+    'tw-merge-optimal/generated.mjs',
+];
+
+export function resolveSources(options = {}) {
+    const sources = options.include ?? DEFAULT_SOURCES;
+    return sources.map((s) => (s.startsWith('.') || s.startsWith('/') ? s : `./${s}`));
+}
+
+export function resolveOutFile(options = {}) {
+    if (options.outFile) return resolve(process.cwd(), options.outFile);
+    return join(process.cwd(), '.tw-merge-optimal', 'generated.mjs');
+}
+
 export function generate(options = {}) {
     const {
         sources = [],
@@ -79,6 +102,8 @@ export function generate(options = {}) {
     if (patterns) args.push('--patterns');
     if (check) args.push('--check');
     args.push(...sources);
+
+    if (out) mkdirSync(dirname(out), { recursive: true });
 
     const result = spawnSync(binary, args, { encoding: 'utf8' });
     const stderr = result.stderr ?? '';

@@ -4,6 +4,7 @@
 //! upstream files listed in `merge_corpus.rs`.
 
 pub struct CorpusFile {
+    #[allow(dead_code)]
     pub name: &'static str,
     pub cases: &'static [(&'static str, &'static str)],
 }

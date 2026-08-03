@@ -21,6 +21,8 @@ pub struct ConflictTable {
     pub entries: HashMap<String, ClassKey>,
     /// Family id -> name.
     pub family_names: Vec<String>,
+    /// Family name -> id index (kept in sync with `family_names`).
+    family_ids: HashMap<String, u16>,
     /// base + `/` -> postfix variant key (only when the postfix changes the
     /// family or the conflict set, e.g. `text-lg/` or `@container/`).
     pub postfix_entries: HashMap<String, ClassKey>,
@@ -39,6 +41,35 @@ impl ConflictTable {
             table.add_class(ds, class, prefix);
         }
         table
+    }
+
+    /// Like `from_classes`, but pre-seeds `family_names` (patterns mode: the
+    /// pattern table's family list, so the table's family ids match the
+    /// pattern table's ids).
+    pub fn from_classes_seeded(
+        ds: &DesignSystem,
+        classes: &[String],
+        prefix: Option<&str>,
+        families: Vec<String>,
+    ) -> Self {
+        let mut table = ConflictTable {
+            family_names: families,
+            ..Default::default()
+        };
+        table.rebuild_family_ids();
+        for class in classes {
+            table.add_class(ds, class, prefix);
+        }
+        table
+    }
+
+    fn rebuild_family_ids(&mut self) {
+        self.family_ids = self
+            .family_names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.clone(), i as u16))
+            .collect();
     }
 
     fn add_class(&mut self, ds: &DesignSystem, class: &str, prefix: Option<&str>) {
@@ -96,9 +127,7 @@ impl ConflictTable {
     /// - container-type: `@container/[name]` resolves to the named
     ///   container family instead.
     fn postfix_key_for(&mut self, parsed: &ParsedClass, r: &Resolved) -> Option<ClassKey> {
-        if parsed.maybe_postfix_position.is_none() {
-            return None;
-        }
+        parsed.maybe_postfix_position?;
         let mut postfix_resolved = r.clone();
         match r.family.as_str() {
             "font-size" => postfix_resolved.prop_families.push("leading".to_string()),
@@ -126,17 +155,25 @@ impl ConflictTable {
             push_unique(&mut conflicts, self.family_id(edge));
         }
         conflicts.sort_unstable();
-        ClassKey { family: r.family.clone(), conflict_ids: conflicts }
+        ClassKey {
+            family: r.family.clone(),
+            conflict_ids: conflicts,
+        }
     }
 
     fn family_id(&mut self, name: &str) -> u16 {
-        match self.family_names.iter().position(|n| n == name) {
-            Some(i) => i as u16,
-            None => {
-                self.family_names.push(name.to_string());
-                (self.family_names.len() - 1) as u16
-            }
+        if let Some(&i) = self.family_ids.get(name) {
+            return i;
         }
+        let i = self.family_names.len() as u16;
+        self.family_names.push(name.to_string());
+        self.family_ids.insert(name.to_string(), i);
+        i
+    }
+
+    /// Read-only family id lookup (used by JS generation).
+    pub fn family_id_of(&self, name: &str) -> u16 {
+        self.family_ids.get(name).copied().unwrap_or(0)
     }
 
     /// Lookup for the merge loop: returns the key of a full class.
@@ -172,21 +209,20 @@ impl ConflictTable {
     /// Per-family conflict id lists (own family + generated properties +
     /// directed edges), for JS generation.
     pub fn family_conflicts(&self) -> Vec<Vec<u16>> {
-        let mut out: Vec<Vec<u16>> = (0..self.family_names.len()).map(|f| vec![f as u16]).collect();
+        let mut out: Vec<Vec<u16>> = (0..self.family_names.len())
+            .map(|f| vec![f as u16])
+            .collect();
         for key in self.entries.values() {
-            let f = self
-                .family_names
-                .iter()
-                .position(|n| n == &key.family)
-                .unwrap_or(0);
-            out[f] = key.conflict_ids.clone();
+            let f = self.family_id_of(&key.family) as usize;
+            let target = &mut out[f];
+            for id in &key.conflict_ids {
+                if !target.contains(id) {
+                    target.push(*id);
+                }
+            }
         }
         for key in self.postfix_entries.values() {
-            let f = self
-                .family_names
-                .iter()
-                .position(|n| n == &key.family)
-                .unwrap_or(0);
+            let f = self.family_id_of(&key.family) as usize;
             let target = &mut out[f];
             for id in &key.conflict_ids {
                 if !target.contains(id) {

@@ -3,3 +3,5 @@ node_modules/
 .DS_Store
 dist/
 *.log
+.tw-merge-optimal/
+packages/tw-merge-optimal/generated.mjs

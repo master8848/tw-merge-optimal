@@ -1,18 +1,7 @@
-import { generate } from './cli.mjs';
+import { generate, resolveSources } from './cli.mjs';
+export { DEFAULT_SOURCES, resolveSources } from './cli.mjs';
 
 const VIRTUAL_ID = '\0tw-merge-optimal';
-
-const DEFAULT_SOURCES = [
-    'src/**/*.{ts,tsx,js,jsx,vue,svelte,astro,html,css}',
-    'app/**/*.{ts,tsx,js,jsx,vue,svelte,astro,html,css}',
-    'pages/**/*.{ts,tsx,js,jsx,vue,svelte,astro,html,css}',
-    'components/**/*.{ts,tsx,js,jsx,vue,svelte,astro,html,css}',
-];
-
-export function resolveSources(options = {}) {
-    const sources = options.include ?? DEFAULT_SOURCES;
-    return sources.map((s) => (s.startsWith('.') ? s : `./${s}`));
-}
 
 export function twMergeOptimal(options = {}) {
     let cached = null;
@@ -26,10 +15,9 @@ export function twMergeOptimal(options = {}) {
             });
             cached = result.bundle;
             if (this.info) {
-                const m = cached.match(/\b([0-9_]+) classes\b/) || cached.match(/const ([A-Z_]+) =/);
-                this.info(
-                    `tw-merge-optimal: ${cached.length} bytes`
-                );
+                const m = cached.match(/const G=\{(.*)\};/);
+                const classes = m ? m[1].split(',').filter(Boolean).length : 0;
+                this.info(`tw-merge-optimal: ${classes} classes, ${cached.length} bytes`);
             }
         },
         resolveId(id) {

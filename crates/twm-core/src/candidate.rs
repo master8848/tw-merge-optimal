@@ -86,11 +86,12 @@ fn parse_inner(class_name: &str) -> ParsedClass {
     let mut base_class_name = base_class_name_with_important.clone();
     let mut has_important = false;
     if base_class_name_with_important.ends_with('!') {
-        base_class_name = base_class_name_with_important[..base_class_name_with_important.len() - 1].to_string();
+        base_class_name =
+            base_class_name_with_important[..base_class_name_with_important.len() - 1].to_string();
         has_important = true;
-    } else if base_class_name_with_important.starts_with('!') {
+    } else if let Some(rest) = base_class_name_with_important.strip_prefix('!') {
         // Legacy Tailwind v3 important prefix.
-        base_class_name = base_class_name_with_important[1..].to_string();
+        base_class_name = rest.to_string();
         has_important = true;
     }
 
@@ -111,8 +112,18 @@ fn parse_inner(class_name: &str) -> ParsedClass {
 /// Order-sensitive modifiers (port of the default-config list). These keep
 /// their relative position during sorting.
 pub const ORDER_SENSITIVE_MODIFIERS: &[&str] = &[
-    "*", "**", "after", "backdrop", "before", "details-content", "file", "first-letter",
-    "first-line", "marker", "placeholder", "selection",
+    "*",
+    "**",
+    "after",
+    "backdrop",
+    "before",
+    "details-content",
+    "file",
+    "first-letter",
+    "first-line",
+    "marker",
+    "placeholder",
+    "selection",
 ];
 
 /// Port of `sort-modifiers.ts`: sorts regular modifiers alphabetically while
@@ -182,7 +193,10 @@ mod tests {
             sort_modifiers(&m(&["x", "y", "*", "z"])),
             m(&["x", "y", "*", "z"])
         );
-        assert_eq!(sort_modifiers(&m(&["hover", "[&>*]", "dark"])), m(&["hover", "[&>*]", "dark"]));
+        assert_eq!(
+            sort_modifiers(&m(&["hover", "[&>*]", "dark"])),
+            m(&["hover", "[&>*]", "dark"])
+        );
     }
 
     #[test]

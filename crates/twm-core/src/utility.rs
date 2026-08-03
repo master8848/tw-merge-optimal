@@ -22,6 +22,99 @@ pub struct DesignSystem {
     pub theme: Theme,
     /// Utility name -> alternatives.
     pub utilities: HashMap<String, Vec<Alternative>>,
+    /// Utility names in resolution priority order (static first, wildcards
+    /// by prefix length desc) — computed once at build.
+    ordered: Vec<String>,
+    /// Prefix trie over static names + wildcard prefixes, for O(prefix)
+    /// resolution instead of a linear scan over all utilities.
+    trie: Trie,
+}
+
+/// One node of the resolution trie. `static_util` / `wildcard_util` are
+/// indices into `DesignSystem::ordered`; at most one utility can end at a
+/// node (utility names are unique keys, and `*` only appears trailing).
+#[derive(Debug, Clone, Default)]
+struct TrieNode {
+    children: HashMap<u8, usize>,
+    static_util: Option<usize>,
+    wildcard_util: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct Trie {
+    nodes: Vec<TrieNode>,
+}
+
+impl Trie {
+    fn new() -> Self {
+        Trie {
+            nodes: vec![TrieNode::default()],
+        }
+    }
+
+    fn insert(&mut self, name: &str, wildcard: bool, util: usize) {
+        let prefix = if wildcard {
+            &name[..name.len() - 1]
+        } else {
+            name
+        };
+        let mut node = 0usize;
+        for &b in prefix.as_bytes() {
+            let next = match self.nodes[node].children.get(&b) {
+                Some(&n) => n,
+                None => {
+                    self.nodes.push(TrieNode::default());
+                    let n = self.nodes.len() - 1;
+                    self.nodes[node].children.insert(b, n);
+                    n
+                }
+            };
+            node = next;
+        }
+        let slot = if wildcard {
+            &mut self.nodes[node].wildcard_util
+        } else {
+            &mut self.nodes[node].static_util
+        };
+        debug_assert!(slot.is_none(), "duplicate utility name {name}");
+        *slot = Some(util);
+    }
+
+    /// Match a candidate name. Returns the utility name plus, for wildcards,
+    /// the byte offset where the value suffix starts. Priority (mirrors
+    /// `ordered_names`): exact static name first, then the longest wildcard
+    /// prefix. `None` when nothing matches.
+    fn lookup<'a>(&self, ordered: &'a [String], name: &str) -> Option<(&'a str, Option<usize>)> {
+        let mut node = 0usize;
+        let mut wildcard: Option<(usize, usize)> = None;
+        let mut complete = true;
+        for (i, &b) in name.as_bytes().iter().enumerate() {
+            let next = match self.nodes[node].children.get(&b) {
+                Some(&n) => n,
+                None => {
+                    complete = false;
+                    break;
+                }
+            };
+            node = next;
+            // A wildcard ends here only when the candidate has a non-empty
+            // suffix (current code skips `value.is_empty()`).
+            if i + 1 < name.len() {
+                if let Some(u) = self.nodes[node].wildcard_util {
+                    wildcard = Some((u, i + 1));
+                }
+            }
+        }
+        if complete {
+            if let Some(u) = self.nodes[node].static_util {
+                return Some((&ordered[u], None));
+            }
+        }
+        if let Some((u, depth)) = wildcard {
+            return Some((&ordered[u], Some(depth)));
+        }
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +122,9 @@ pub struct Alternative {
     /// (property, value spec): `None` = literal value (always applies),
     /// `Some(Items)` = the value must match at least one spec item.
     pub props: Vec<(String, Option<ValueSpec>)>,
+    /// Precomputed families for this alternative (computed once at catalog
+    /// build, reused for every candidate that resolves to it).
+    pub resolved: Resolved,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueSpec {
@@ -43,7 +139,10 @@ pub enum SpecItem {
     Keyword(String),
     Type(&'static str),
     /// Theme key prefix with `*` (e.g. `--text-*`) or without (e.g. `--spacing`).
-    ThemeKey { prefix: String, has_star: bool },
+    ThemeKey {
+        prefix: String,
+        has_star: bool,
+    },
 }
 
 /// The result of resolving a candidate base class (postfix already stripped).
@@ -76,16 +175,13 @@ impl DesignSystem {
                     None => (prop.clone(), None),
                 })
                 .collect();
-            alts.push(Alternative { props });
+            alts.push(Alternative {
+                resolved: resolve_alternative(&name, &props),
+                props,
+            });
         }
-        DesignSystem { theme, utilities: map }
-    }
-
-    /// Sort utilities by resolution priority: exact static names first, then
-    /// wildcards by prefix length (longest first).
-    fn ordered_names(&self) -> Vec<&str> {
-        let mut names: Vec<&str> = self.utilities.keys().map(|s| s.as_str()).collect();
-        names.sort_by(|a, b| {
+        let mut ordered: Vec<String> = map.keys().cloned().collect();
+        ordered.sort_by(|a, b| {
             let a_wild = a.ends_with('*');
             let b_wild = b.ends_with('*');
             match (a_wild, b_wild) {
@@ -94,7 +190,16 @@ impl DesignSystem {
                 _ => b.len().cmp(&a.len()),
             }
         });
-        names
+        let mut trie = Trie::new();
+        for (i, name) in ordered.iter().enumerate() {
+            trie.insert(name, name.ends_with('*'), i);
+        }
+        DesignSystem {
+            theme,
+            utilities: map,
+            ordered,
+            trie,
+        }
     }
 
     /// Resolve a base class name (negative prefix, important marker and
@@ -109,7 +214,10 @@ impl DesignSystem {
                 return None;
             }
             let family = format!("{ARBITRARY_PROPERTY_PREFIX}{prop}");
-            return Some(Resolved { family: family.clone(), prop_families: vec![family] });
+            return Some(Resolved {
+                family: family.clone(),
+                prop_families: vec![family],
+            });
         }
 
         let name = match base.strip_prefix('-') {
@@ -117,59 +225,56 @@ impl DesignSystem {
             _ => base,
         };
 
-        for util_name in self.ordered_names() {
-            if util_name.ends_with('*') {
-                let prefix = &util_name[..util_name.len() - 1];
-                if let Some(value) = name.strip_prefix(prefix) {
-                    if value.is_empty() {
-                        continue;
-                    }
-                    for alt in &self.utilities[util_name] {
-                        if alt.matches(self, value) {
-                            return Some(self.resolved_from(util_name, alt));
-                        }
-                    }
-                }
-            } else if util_name == name {
-                for alt in &self.utilities[util_name] {
-                    if alt.matches_literal() {
-                        return Some(self.resolved_from(util_name, alt));
-                    }
-                }
+        let (util_name, suffix_start) = self.trie.lookup(&self.ordered, name)?;
+        // Static utilities only match literal alternatives (no markers);
+        // wildcards match alternatives whose spec accepts the value suffix.
+        let matches = |alt: &Alternative| -> bool {
+            match suffix_start {
+                Some(start) => alt.matches(self, &name[start..]),
+                None => alt.matches_literal(),
+            }
+        };
+        for alt in &self.utilities[util_name] {
+            if matches(alt) {
+                return Some(alt.resolved.clone());
             }
         }
         None
     }
+}
 
-    fn resolved_from(&self, utility: &str, alt: &Alternative) -> Resolved {
-        let prop_families: Vec<String> = alt
-            .props
+/// Families of one utility alternative: own family + generated-property
+/// families, honoring `utility_override` filters. Computed once per
+/// alternative at catalog build.
+fn resolve_alternative(utility: &str, props: &[(String, Option<ValueSpec>)]) -> Resolved {
+    let prop_families: Vec<String> = props
+        .iter()
+        .map(|(prop, _)| prop_family(prop, utility).to_string())
+        .collect();
+
+    let (own_family, keep) = if let Some((own, keep)) = utility_override(utility) {
+        (own.to_string(), keep)
+    } else if prop_families.len() == 1 {
+        (prop_families[0].clone(), None)
+    } else {
+        // Multi-property utility without override: the own family is the
+        // utility name (e.g. `size-*` -> `size`, `rounded-t-*` -> `rounded-t`).
+        let name = utility.trim_end_matches('*');
+        (name.to_string(), None)
+    };
+
+    let filtered = match keep {
+        Some(keep_props) => props
             .iter()
-            .map(|(prop, _)| prop_family(prop, utility).to_string())
-            .collect();
+            .filter(|(p, _)| keep_props.contains(&p.as_str()))
+            .map(|(p, _)| prop_family(p, utility).to_string())
+            .collect(),
+        None => prop_families,
+    };
 
-        let (own_family, keep) = if let Some((own, keep)) = utility_override(utility) {
-            (own.to_string(), keep)
-        } else if prop_families.len() == 1 {
-            (prop_families[0].clone(), None)
-        } else {
-            // Multi-property utility without override: the own family is the
-            // utility name (e.g. `size-*` -> `size`, `rounded-t-*` -> `rounded-t`).
-            let name = utility.trim_end_matches('*');
-            (name.to_string(), None)
-        };
-
-        let filtered = match keep {
-            Some(props) => alt
-                .props
-                .iter()
-                .filter(|(p, _)| props.contains(&p.as_str()))
-                .map(|(p, _)| prop_family(p, utility).to_string())
-                .collect(),
-            None => prop_families,
-        };
-
-        Resolved { family: own_family, prop_families: filtered }
+    Resolved {
+        family: own_family,
+        prop_families: filtered,
     }
 }
 
@@ -238,7 +343,9 @@ impl SpecItem {
                 "arbitrary" => false,
                 "spacing" => {
                     // `px` or any number, plus arbitrary values/variables.
-                    value == "px" || is_number(value) || is_arbitrary_value(value)
+                    value == "px"
+                        || is_number(value)
+                        || is_arbitrary_value(value)
                         || is_arbitrary_variable(value)
                 }
                 "any-non-arbitrary" => is_any_non_arbitrary(value),

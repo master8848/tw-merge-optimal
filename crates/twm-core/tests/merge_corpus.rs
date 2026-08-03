@@ -97,18 +97,45 @@ corpus_tests! {
 #[test]
 fn prefixes() {
     let classes = vec![
-        "tw:block".to_string(), "tw:hidden".to_string(), "block".to_string(), "hidden".to_string(),
-        "tw:p-3".to_string(), "tw:p-2".to_string(), "p-3".to_string(), "p-2".to_string(),
-        "tw:right-0!".to_string(), "tw:inset-0!".to_string(),
-        "tw:hover:focus:right-0!".to_string(), "tw:focus:hover:inset-0!".to_string(),
+        "tw:block".to_string(),
+        "tw:hidden".to_string(),
+        "block".to_string(),
+        "hidden".to_string(),
+        "tw:p-3".to_string(),
+        "tw:p-2".to_string(),
+        "p-3".to_string(),
+        "p-2".to_string(),
+        "tw:right-0!".to_string(),
+        "tw:inset-0!".to_string(),
+        "tw:hover:focus:right-0!".to_string(),
+        "tw:focus:hover:inset-0!".to_string(),
     ];
-    assert_eq!(common::merge_with_prefix(&classes, "tw:block tw:hidden", "tw"), "tw:hidden");
-    assert_eq!(common::merge_with_prefix(&classes, "block hidden", "tw"), "block hidden");
-    assert_eq!(common::merge_with_prefix(&classes, "tw:p-3 tw:p-2", "tw"), "tw:p-2");
-    assert_eq!(common::merge_with_prefix(&classes, "p-3 p-2", "tw"), "p-3 p-2");
-    assert_eq!(common::merge_with_prefix(&classes, "tw:right-0! tw:inset-0!", "tw"), "tw:inset-0!");
     assert_eq!(
-        common::merge_with_prefix(&classes, "tw:hover:focus:right-0! tw:focus:hover:inset-0!", "tw"),
+        common::merge_with_prefix(&classes, "tw:block tw:hidden", "tw"),
+        "tw:hidden"
+    );
+    assert_eq!(
+        common::merge_with_prefix(&classes, "block hidden", "tw"),
+        "block hidden"
+    );
+    assert_eq!(
+        common::merge_with_prefix(&classes, "tw:p-3 tw:p-2", "tw"),
+        "tw:p-2"
+    );
+    assert_eq!(
+        common::merge_with_prefix(&classes, "p-3 p-2", "tw"),
+        "p-3 p-2"
+    );
+    assert_eq!(
+        common::merge_with_prefix(&classes, "tw:right-0! tw:inset-0!", "tw"),
+        "tw:inset-0!"
+    );
+    assert_eq!(
+        common::merge_with_prefix(
+            &classes,
+            "tw:hover:focus:right-0! tw:focus:hover:inset-0!",
+            "tw"
+        ),
         "tw:focus:hover:inset-0!"
     );
 }
@@ -119,12 +146,7 @@ fn prefixes() {
 
 #[test]
 fn tw_join_strings() {
-    run_join(&[
-        ("", ""),
-        ("foo", "foo"),
-        ("foo", "foo"),
-        ("", ""),
-    ]);
+    run_join(&[("", ""), ("foo", "foo"), ("foo", "foo"), ("", "")]);
 }
 
 #[test]
@@ -159,11 +181,7 @@ fn tw_join_nested_arrays() {
 
 #[test]
 fn tw_join_variadic_arrays() {
-    run_join(&[
-        ("", ""),
-        ("foo bar", "foo bar"),
-        ("foo baz", "foo baz"),
-    ]);
+    run_join(&[("", ""), ("foo bar", "foo bar"), ("foo baz", "foo baz")]);
 }
 
 // =====================================================================

@@ -31,6 +31,7 @@ pub fn union_classes<'a>(cases: &[(&'a str, &'a str)]) -> Vec<String> {
 }
 
 /// Merge with a prefix (for the prefixes corpus file).
+#[allow(dead_code)]
 pub fn merge_with_prefix(classes: &[String], list: &str, prefix: &str) -> String {
     let ds = design_system();
     let table = ConflictTable::from_classes(&ds, classes, Some(prefix));
@@ -38,6 +39,7 @@ pub fn merge_with_prefix(classes: &[String], list: &str, prefix: &str) -> String
 }
 
 /// Run all cases of a corpus file against a table built from the union.
+#[allow(dead_code)]
 pub fn run(cases: &[(&'static str, &'static str)]) {
     let ds = design_system();
     let union = union_classes(cases);
@@ -46,13 +48,21 @@ pub fn run(cases: &[(&'static str, &'static str)]) {
     for (i, (input, expected)) in cases.iter().enumerate() {
         let got = tw_merge(&table, input, None);
         if got != *expected {
-            failures.push(format!("case {i}: {input:?} -> got {got:?}, expected {expected:?}"));
+            failures.push(format!(
+                "case {i}: {input:?} -> got {got:?}, expected {expected:?}"
+            ));
         }
     }
-    assert!(failures.is_empty(), "{} corpus case(s) failed:\n{}", failures.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} corpus case(s) failed:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }
 
 /// `twJoin` port assertions (strings + nested arrays).
+#[allow(dead_code)]
 pub fn run_join(cases: &[(&'static str, &'static str)]) {
     for (input, expected) in cases {
         let got = tw_join(&[twm_core::JoinValue::Str(input)]);

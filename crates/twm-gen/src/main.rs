@@ -6,12 +6,13 @@
 //! design system CSS, and either emits a minimal JS `twMerge`/`twJoin` bundle
 //! (stdout or --out) or reports conflicts among the used classes (--check).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::ExitCode;
 
 use twm_core::conflict::conflict_key;
 use twm_core::generate::{generate_js, GenerateOptions};
+use twm_core::patterns::PatternTable;
 use twm_core::scan::{line_col, scan_content};
 use twm_core::tw_merge;
 use twm_core::{default_design_system, ConflictTable, DesignSystem};
@@ -21,6 +22,7 @@ struct Args {
     out: Option<String>,
     prefix: Option<String>,
     check: bool,
+    patterns: bool,
     paths: Vec<String>,
 }
 
@@ -60,6 +62,7 @@ fn main() -> ExitCode {
     // Scan every file: candidates + byte offsets for --check reporting.
     let mut hits: Vec<(String, String, usize)> = Vec::new(); // (class, path, offset)
     let mut all_classes: Vec<String> = Vec::new();
+    let mut seen_classes: HashSet<String> = HashSet::new();
     for path in &files {
         let Ok(content) = std::fs::read(path) else {
             eprintln!("twm-gen: cannot read {path}");
@@ -68,7 +71,7 @@ fn main() -> ExitCode {
         let scan = scan_content(Path::new(path), &content);
         for hit in &scan.candidates {
             hits.push((hit.class.clone(), path.clone(), hit.offset));
-            if !all_classes.iter().any(|c| c == &hit.class) {
+            if seen_classes.insert(hit.class.clone()) {
                 all_classes.push(hit.class.clone());
             }
         }
@@ -78,8 +81,24 @@ fn main() -> ExitCode {
         return run_check(&ds, prefix, &hits);
     }
 
-    let table = ConflictTable::from_classes(&ds, &all_classes, prefix);
-    let js = generate_js(&table, &GenerateOptions { prefix });
+    // Patterns mode: build the full design-system pattern table and seed the
+    // conflict table with its family ids, so exact and pattern lookups share
+    // one numbering.
+    let patterns = args.patterns.then(|| PatternTable::from_design_system(&ds));
+    let table = match &patterns {
+        Some(p) => {
+            ConflictTable::from_classes_seeded(&ds, &all_classes, prefix, p.family_names.clone())
+        }
+        None => ConflictTable::from_classes(&ds, &all_classes, prefix),
+    };
+    let js = generate_js(
+        &table,
+        patterns.as_ref(),
+        &GenerateOptions {
+            prefix,
+            patterns: args.patterns,
+        },
+    );
     match &args.out {
         Some(out) => {
             std::fs::write(out, &js).unwrap_or_else(|e| {
@@ -87,11 +106,12 @@ fn main() -> ExitCode {
                 std::process::exit(1);
             });
             eprintln!(
-                "twm-gen: {} files scanned, {} unique candidates, wrote {} ({} bytes)",
+                "twm-gen: {} files scanned, {} unique candidates, wrote {} ({} bytes{})",
                 files.len(),
                 all_classes.len(),
                 out,
-                js.len()
+                js.len(),
+                if args.patterns { ", patterns" } else { "" }
             );
         }
         None => print!("{js}"),
@@ -104,6 +124,7 @@ fn parse_args() -> Option<Args> {
     let mut out = None;
     let mut prefix = None;
     let mut check = false;
+    let mut patterns = false;
     let mut paths = Vec::new();
     let mut it = std::env::args().skip(1).peekable();
     while let Some(arg) = it.next() {
@@ -113,6 +134,7 @@ fn parse_args() -> Option<Args> {
             "--out" => out = Some(it.next()?),
             "--prefix" => prefix = Some(it.next()?),
             "--check" => check = true,
+            "--patterns" => patterns = true,
             _ if arg.starts_with('-') && arg.len() > 1 => {
                 eprintln!("twm-gen: unknown option {arg}");
                 return None;
@@ -120,7 +142,14 @@ fn parse_args() -> Option<Args> {
             _ => paths.push(arg),
         }
     }
-    Some(Args { css, out, prefix, check, paths })
+    Some(Args {
+        css,
+        out,
+        prefix,
+        check,
+        patterns,
+        paths,
+    })
 }
 
 fn build_design_system(extra: Option<&str>) -> DesignSystem {
@@ -147,9 +176,38 @@ fn build_design_system(extra: Option<&str>) -> DesignSystem {
 /// Extensions we walk when given a directory (the ones Tailwind scans by
 /// default in v4).
 const SOURCE_EXTENSIONS: &[&str] = &[
-    "html", "htm", "svelte", "vue", "astro", "php", "phtml", "erb", "haml", "mustache", "hbs",
-    "handlebars", "twig", "md", "mdx", "css", "scss", "sass", "less", "styl", "rs", "go", "py",
-    "rb", "js", "jsx", "ts", "tsx", "mjs", "cjs", "json", "txt",
+    "html",
+    "htm",
+    "svelte",
+    "vue",
+    "astro",
+    "php",
+    "phtml",
+    "erb",
+    "haml",
+    "mustache",
+    "hbs",
+    "handlebars",
+    "twig",
+    "md",
+    "mdx",
+    "css",
+    "scss",
+    "sass",
+    "less",
+    "styl",
+    "rs",
+    "go",
+    "py",
+    "rb",
+    "js",
+    "jsx",
+    "ts",
+    "tsx",
+    "mjs",
+    "cjs",
+    "json",
+    "txt",
 ];
 
 fn has_glob_chars(s: &str) -> bool {
@@ -159,15 +217,13 @@ fn has_glob_chars(s: &str) -> bool {
 fn collect_paths(pattern: &str, out: &mut Vec<String>) {
     if has_glob_chars(pattern) {
         let mut seen = HashSet::new();
-        for entry in glob::glob(pattern).unwrap_or_else(|e| {
+        for path in glob::glob(pattern).unwrap_or_else(|e| {
             eprintln!("twm-gen: bad glob {pattern}: {e}");
             std::process::exit(1);
-        }) {
-            if let Ok(path) = entry {
-                let key = path.to_string_lossy().into_owned();
-                if seen.insert(key.clone()) {
-                    out.push(key);
-                }
+        }).flatten() {
+            let key = path.to_string_lossy().into_owned();
+            if seen.insert(key.clone()) {
+                out.push(key);
             }
         }
         return;
@@ -213,6 +269,7 @@ fn run_check(
 
     let mut seen: HashSet<String> = HashSet::new();
     let mut drops: Vec<String> = Vec::new();
+    let mut contents: HashMap<String, Vec<u8>> = HashMap::new();
     for (index, original) in classes.iter().enumerate().rev() {
         let parsed = twm_core::candidate::parse_class_name(original, prefix);
         if parsed.is_external {
@@ -225,7 +282,10 @@ fn run_check(
         if seen.contains(&mk) {
             let path = &hits[index].1;
             let offset = hits[index].2;
-            let content = std::fs::read(path).unwrap_or_default();
+            let content = contents
+                .entry(path.clone())
+                .or_insert_with(|| std::fs::read(path).unwrap_or_default())
+                .clone();
             let (line, col) = line_col(&content, offset);
             drops.push(format!("  {path}:{line}:{col}: {original}"));
         }
@@ -236,7 +296,10 @@ fn run_check(
                 _ => twm_core::candidate::sort_modifiers(&parsed.modifiers).join(":"),
             };
             let important = if parsed.has_important { "!" } else { "" };
-            seen.insert(format!("{variant}{important}{}", table.family_names[fid as usize]));
+            seen.insert(format!(
+                "{variant}{important}{}",
+                table.family_names[fid as usize]
+            ));
         }
     }
     drops.sort();

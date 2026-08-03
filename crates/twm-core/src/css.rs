@@ -4,6 +4,7 @@
 //! - `@theme [default] { --custom-property: value; ... }` blocks
 //! - `@utility <name> { <property>: <value>; ... }` rules
 //! - `@variant <name>` / `@custom-variant <name>` declarations (names only)
+//!
 //! Everything else (selectors, media queries, other at-rules, comments) is
 //! skipped. Values may contain `--value(...)` markers (see `utility.rs`).
 
@@ -187,7 +188,10 @@ fn read_utility_name(bytes: &[u8], i: &mut usize) -> String {
     while *i < bytes.len() {
         let c = bytes[*i];
         if c.is_ascii_alphanumeric()
-            || matches!(c, b'-' | b'_' | b'*' | b'@' | b'.' | b'%' | b'[' | b']' | b'(' | b')')
+            || matches!(
+                c,
+                b'-' | b'_' | b'*' | b'@' | b'.' | b'%' | b'[' | b']' | b'(' | b')'
+            )
         {
             *i += 1;
         } else {

@@ -121,12 +121,12 @@ Measured raw and gzipped (Node zlib, same run as the benchmarks below):
 | Artifact | Raw | gzip |
 |---|---|---|
 | tailwind-merge `dist/bundle-mjs.mjs` (full default config + API) | 103.1 KB | 17.4 KB |
-| tw-merge-optimal benchmark bundle (951 classes, 256 families) | 18.7 KB | 6.4 KB |
-| tw-merge-optimal corpus-union bundle (637 classes) | 14.5 KB | — |
-| tw-merge-optimal small sample (96 classes) | 3.1 KB | — |
+| tw-merge-optimal benchmark bundle (951 classes, 256 families) | 18.9 KB | 6.5 KB |
+| tw-merge-optimal corpus-union bundle (637 classes) | 14.7 KB | — |
+| tw-merge-optimal small sample (96 classes) | 3.2 KB | — |
 
 The generated bundle contains only the classes a project uses, plus a compact
-runtime (~1.8 KB fixed, dependency-free ESM): a class→family table, a
+runtime (~2.1 KB fixed, dependency-free ESM): a class→family table, a
 family→conflicts table, and feature-flagged helpers that ship only when the
 project needs them. Budgets enforced by tests: corpus union < 20 KB, small
 sample < 4 KB.
@@ -149,13 +149,13 @@ measures ops/s (higher = better):
 
 | Workload | tailwind-merge | tw-merge-optimal | ratio |
 |---|---|---|---|
-| init (`extendTailwindMerge` / none needed) | 2,861 ops/s | 442,402 ops/s | **155×** |
-| simple (2 classes) | 2,848 ops/s | 328,365 ops/s | **115×** |
-| heavy (real-world 10-arg call) | 2,787 ops/s | 114,998 ops/s | **41×** |
-| ultra-long list (2,400 classes, cache off) | 852 ops/s | 3,398 ops/s | **4.0×** |
-| collection ×1,322 (cache off) | 86 ops/s | 198 ops/s | **2.3×** |
-| collection ×1,322 (with result cache) | 508 ops/s | 198 ops/s | 0.39× |
-| corpus 335 cases (short repeated inputs) | 46,933 ops/s | 4,863 ops/s | 0.10× |
+| init (`extendTailwindMerge` / none needed) | 3,737 ops/s | 544,000 ops/s | **145×** |
+| simple (2 classes) | 3,578 ops/s | 430,000 ops/s | **120×** |
+| heavy (real-world 10-arg call) | 3,491 ops/s | 137,000 ops/s | **39×** |
+| ultra-long list (2,400 classes, cache off) | 1,042 ops/s | 4,130 ops/s | **4.0×** |
+| collection ×1,322 (cache off) | 101 ops/s | 216 ops/s | **2.1×** |
+| collection ×1,322 (with result cache) | 654 ops/s | 216 ops/s | 0.33× |
+| corpus 335 cases (short repeated inputs) | 58,818 ops/s | 4,900 ops/s | 0.08× |
 
 Notes, for fairness:
 
@@ -169,10 +169,16 @@ Notes, for fairness:
   cache are extremely V8-friendly. tw-merge-optimal wins everywhere real-world
   calls are shaped — long lists, many conflicts, modifiers — and in the
   collection workload it beats tailwind-merge with its cache *off* (the fair
-  no-cache comparison) by 2.3×.
-- Heap deltas per run (lower is better): init 1.28 MB vs 0.19 MB, heavy
-  0.81 MB vs 0.27 MB, ultra-long 1.45 MB vs 0.32 MB, corpus 1.32 MB vs
-  0.66 MB.
+  no-cache comparison) by 2.1×.
+- Bench runs on this machine vary by ±20–30% run to run (even for
+  tailwind-merge itself); the corpus row above is the mean of alternating
+  A/B runs where tw-merge-optimal measured 4,770–4,996 ops/s against
+  tailwind-merge's 58,378–60,224. The old split-based runtime measured
+  4,450–4,613 in the same alternating runs, so the short-input fast path
+  is a real win there, not a regression.
+- Heap deltas per run (lower is better): init 1.26 MB vs 0.20 MB, heavy
+  1.02 MB vs 0.47 MB, ultra-long 1.50 MB vs 0.24 MB, corpus 1.32 MB vs
+  0.45 MB.
 
 Parity: every benchmarked input produces byte-identical output in both
 implementations — the `corpus` bench throws on any mismatch, and
@@ -206,17 +212,28 @@ node bench/verify.mjs
 - `twMerge` is a single right-to-left pass with **O(1) table lookups**:
   class → family id (`G`) and family id → conflict ids (`W`). No regex-driven
   parsing per class, no config, no WASM.
+- **Short-input fast path**: the two shortest classes that can conflict are
+  `p-2 p-1` = 7 chars, so anything shorter than 7 chars returns
+  trimmed+normalized before any split, parse or table access — empty and
+  single-class calls are a pure `trim()` + length check.
+- Tokenization is an **array-free charCode scan**: a right-to-left scan that
+  slices each token directly (whitespace = char codes ≤ 32), replacing the
+  old `split(/\s+/)` array + per-token substrings (and the `trim()` copy is
+  folded into the scan for the ≥7-char path).
+- `seen` (the conflict-key set) is **allocated lazily** — calls where no
+  Tailwind classes appear never allocate it.
 - `G` is a **prototype-less object** so the hot path uses the fast `in`
   operator instead of `Object.prototype.hasOwnProperty.call`.
 - Parse results are **memoized per class string** (`PC`) — the same trick as
   tailwind-merge's `cachedParseClassName`; class names repeat heavily in real
-  renders.
+  renders. The memo is **bounded at 8,192 entries** and cleared when
+  exceeded, capping memory on long-lived apps with dynamic class strings.
 - Conflict tracking uses a **plain array + `includes`** instead of a `Set` —
   faster for the tiny per-family conflict lists (tailwind-merge's benchmarked
   `mergeClassList` does the same).
 - Modifier sorting is order-sensitive with anchor variants (`*`, `before`,
   `selection`, …) and never allocates unless modifiers are present.
-- Minified single-line ESM: ~1.8 KB fixed runtime + ~16 B per class.
+- Minified single-line ESM: ~2.1 KB fixed runtime + ~16 B per class.
 
 ## Tests
 
@@ -270,6 +287,50 @@ cargo test -- --include-ignored # + the 2 documented known-deviation placeholder
 - Only the default design system ships; custom `@utility` rules require `--css`.
 - `twJoin` accepts strings and nested arrays; Rust-side falsy-value semantics follow
   the ported corpus (`JoinValue`).
+
+## Build-time plugins
+
+The `tw-merge-optimal` npm package wires the generator into your bundler, so
+`import { twMerge } from 'tw-merge-optimal'` resolves to a per-project bundle
+built from your actual sources. Prerequisite: `cargo build -p twm-gen --release`
+(or set `TWM_GEN_BIN`).
+
+| Bundler | Plugin | File |
+|---|---|---|
+| Vite | `twMergeOptimal` | `tw-merge-optimal/vite` |
+| Rsbuild | `rsbuildPluginTwMergeOptimal` | `tw-merge-optimal/rsbuild` |
+| Rspack | `twMergeOptimalRspack` | `tw-merge-optimal/rspack` |
+| webpack | `twMergeOptimalWebpack` | `tw-merge-optimal/webpack` |
+| Bun | `twMergeOptimalBun` | `tw-merge-optimal/bun` |
+| Next.js / Turbopack | `withTwMergeOptimal` | `tw-merge-optimal/turbopack` |
+| Babel | `twMergeOptimalBabel` | `tw-merge-optimal/babel` |
+
+Vite/Bun serve the bundle in-memory; the rest write it to
+`.tw-merge-optimal/generated.mjs` (git-ignore it) and alias the import to that
+file. All plugins accept the same options (`sources`/`include`, `css`,
+`prefix`, `check`, `outFile`) — see the package README for the full table,
+per-bundler quickstarts and the real-project workflow.
+
+Minimal Vite setup:
+
+```js
+// vite.config.mjs
+import { twMergeOptimal } from 'tw-merge-optimal/vite'
+
+export default {
+    plugins: [twMergeOptimal()],
+}
+```
+
+Then:
+
+```js
+import { twMerge, twJoin } from 'tw-merge-optimal'
+
+twMerge('px-2 py-1 bg-red', 'p-3 bg-[#B91C1C]') // → 'p-3 bg-[#B91C1C]'
+```
+
+Full guide: [packages/tw-merge-optimal/README.md](packages/tw-merge-optimal/README.md).
 
 ## License
 
