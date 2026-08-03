@@ -34,6 +34,27 @@ macro_rules! corpus_tests {
                 run(FILES[$idx].cases);
             }
         )*
+
+        // Guard: the corpus test names must stay aligned with FILES indices —
+        // a misaligned insert would silently run the wrong expectations.
+        #[test]
+        fn corpus_index_alignment() {
+            let expected: &[&str] = &[$(stringify!($name)),*];
+            assert_eq!(
+                expected.len(),
+                FILES.len(),
+                "merge_corpus lists {} files but corpus_data has {}",
+                expected.len(),
+                FILES.len()
+            );
+            for (i, (name, file)) in expected.iter().zip(FILES.iter()).enumerate() {
+                assert_eq!(
+                    *name, file.name,
+                    "corpus index {i} misaligned: macro test `{name}` runs FILES[{i}] `{}`",
+                    file.name
+                );
+            }
+        }
     };
 }
 
@@ -88,6 +109,7 @@ corpus_tests! {
     tailwind_css_v4_3_tab_size => 47,
     array_values => 48,
     docs_examples => 49,
+    deviation_arbitrary_property_merging => 50,
 }
 
 // =====================================================================
