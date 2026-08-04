@@ -19,14 +19,16 @@ compared that against a tw-merge-optimal module that imports precomputed tables.
 tables below measure **pure merge time** with both instances built once, and include the
 one-time init cost as a separate, clearly-labeled row note.
 
-The latest architecture change (matcher-only bundles) also **regressed the warm-cache
-rows** versus the previously published patterns/exact numbers: the old exact-mode design
-kept an O(1) class→family table (`G`) and object-property caches, and measured
-**1.32–1.36× wins on the corpus row and parity on simple/heavy**. The matcher-only
-design sends every class through the `BI`-indexed pattern matcher and touches both
-Map-LRU caches on every hit, so the steady-state rows are now slower — honestly
-reported below, with the trade (smaller bundle, one runtime shape, unseen classes
-resolve) in [size.md](size.md).
+The architecture change to matcher-only bundles (no `G` table, no exact mode) is
+described in [runtime.md](runtime.md). The caches are **two-generation object LRUs**
+(the key is a property of a null-prototype object, never a `Map`): a warm hit is a
+single property read with no touch or bookkeeping, a previous-generation hit
+re-inserts on the spot, and an insert past the bound swaps the current generation
+to previous — amortized O(1) eviction with no per-entry deletion and no
+`Map.keys()`-while-deleting (a V8 pathology at capacity, ~3.3 µs/insert). Long
+joined keys (>1,024 chars) are flattened (`slice(0)`) before the result-cache
+lookup: hashing a deep cons-string rope on every call cost tens of microseconds on
+the ultra-long workload. The numbers below are the honest steady state.
 
 ## Benchmarks (ops/s, higher is better)
 
@@ -34,49 +36,53 @@ Latest run: 2026-08-04, Node v24.13.0, Apple Silicon (macOS 26.5.2).
 
 | Workload | tailwind-merge | tw-merge-optimal | ratio |
 |---|---|---|---|
-| simple (2 classes, both caches warm) | 538,980 | 450,942 | tailwind-merge 1.19× |
-| simple string-only (warm) | 579,092 | 511,985 | tailwind-merge 1.13× |
-| heavy (real-world 10-arg call, warm) | 381,749 | 351,455 | tailwind-merge 1.09× |
-| corpus (349 cases, warm) | 55,858 | 31,889 | tailwind-merge 1.75× |
-| collection ×1,322 (tw cache on) | 1,341 | 1,024 | tailwind-merge 1.31× |
-| collection ×1,322 (tw cache off) | 107 | 1,024 | **9.5× (optimal)** |
-| ultra-long list (2,400 classes, tw cache on) | 18,425 | 13,509 | tailwind-merge 1.36× |
-| ultra-long list (2,400 classes, tw cache off) | 1,462 | 13,509 | **9.2× (optimal)** |
+| simple (2 classes, both caches warm) | 538,229 | 531,183 | tailwind-merge 1.01× |
+| simple string-only (warm) | 591,924 | 580,172 | tailwind-merge 1.02× |
+| heavy (real-world 10-arg call, warm) | 385,158 | 377,451 | tailwind-merge 1.02× |
+| corpus (349 cases, warm) | 58,794 | 84,351 | **1.43× (optimal)** |
+| collection ×1,322 (tw cache on) | 1,354 | 1,329 | tailwind-merge 1.02× |
+| collection ×1,322 (tw cache off) | 108 | 1,329 | **12.3× (optimal)** |
+| ultra-long list (2,400 classes, tw cache on) | 18,685 | 18,802 | 1.01× (optimal) |
+| ultra-long list (2,400 classes, tw cache off) | 1,464 | 18,802 | **12.8× (optimal)** |
 
 `bench/verify.mjs` (rotated loop, guards against V8 constant-folding): corpus pass in
-0.039 ms (tailwind-merge) vs 0.069 ms (tw-merge-optimal) — 9,042K vs 5,026K cases/s,
-i.e. tailwind-merge 1.8× on the fully-warm corpus; 0 parity mismatches.
+0.032 ms (tailwind-merge) vs 0.034 ms (tw-merge-optimal) — 10,933K vs 10,253K cases/s,
+i.e. tailwind-merge 1.07× on the fully-warm corpus; 0 parity mismatches.
 
 ## Honest reading
 
-- **Short typical calls (simple/heavy): tailwind-merge leads ~1.1–1.2×.** Both sides
-  are dominated by the whole-call result-cache hit. tailwind-merge's hit is a single
-  object-property read + LRU timestamp bump; tw-merge-optimal's is a `Map.get` + delete
-  + re-set (to keep the Map an LRU), plus the cache-hit path still does the rest-arg
-  join. The old exact-mode design was at parity here — the Map-LRU touch is the
-  difference. The margin is small (a few hundred ns), but it is consistent.
-- **Corpus row: tailwind-merge wins 1.75×.** This row measures the same warm
-  single-string calls as "simple" but across 349 inputs; both result caches absorb it
-  after the first pass, so it is the RC-hit path again — the previous design measured
-  **1.32–1.36× in tw-merge-optimal's favor** here, so this is the regression to
-  watch. If a future optimization restores object-property (or `Map` hit without
-  delete/re-set) memo hits, this row should return toward parity.
-- **tw-merge-optimal wins ~9.2–9.5× where tailwind-merge's result cache can't help**
+- **Short typical calls (simple/heavy): parity within ~2%.** Both sides are
+  dominated by the whole-call result-cache hit. tailwind-merge's hit is a
+  null-prototype property read (its LRU does not touch on a main-cache hit);
+  tw-merge-optimal's is the same shape — one property read, no touch. The residual
+  ~1-2% is join/machinery, consistently in tailwind-merge's favor by a few ns.
+- **Corpus row: tw-merge-optimal leads 1.43×.** This row measures the same warm
+  single-string calls as "simple" but across 349 inputs; both result caches absorb
+  it after the first pass, so it is the RC-hit path again — and on this row
+  tw-merge-optimal's object read beats tailwind-merge's LRU bookkeeping (its
+  generation-swap `update` on previous-cache hits plus a `previousCache` miss check
+  per call). The earlier Map-based designs measured **1.75× behind** (delete+re-set
+  touch on every hit) and **1.10× behind** (linked-list touch) on this row.
+- **tw-merge-optimal wins ~12× where tailwind-merge's result cache can't help**
   (cache disabled, or thrashing on long/dynamic inputs): its cache is always-on and
   holds 8,192 entries; tailwind-merge's is LRU-500 (v3 default) and opt-in-offable.
-  The old design measured 12.5×/12.7× here; the matcher-only cost applies to
-  cache-off rows too, but the always-on cache advantage still dominates.
+  A long-lived app that cycles more distinct class strings than its cache bound
+  keeps its hot set warm (the previous generation still hits), while tailwind-merge
+  recomputes everything below its bound.
+- **Ultra-long row: parity (was 1.35× behind).** Both sides re-join the 2,400-class
+  string per call; the flatten-before-lookup fix removed the deep-rope hash cost
+  that had put this row firmly in tailwind-merge's favor.
 - **One-time init (not per-call):** tailwind-merge pays a lazy init of ~1–8 ms
-  (config + parser construction) on the first merge call of each instance (1.16 ms on
+  (config + parser construction) on the first merge call of each instance (1.11 ms on
   this run). tw-merge-optimal has zero init — the tables are static data at module load.
-- **Heap per workload (lower is better):** simple 205 KB (optimal) vs 1.20 MB
-  (tailwind-merge); collection cache-off 1.78 MB (optimal) vs 12.17 MB
-  (tailwind-merge); ultra-long 721 KB (optimal) vs 657 KB (tailwind-merge, cache off);
-  corpus 1.45 MB (optimal) vs 656 KB (tailwind-merge). The optimal Map caches hold
-  more entries (8,192 vs 500), so it wins where tailwind-merge's LRU-500 thrashes and
-  roughly ties/leads elsewhere; the `simple` row's 1.2 MB tailwind-merge figure is its
-  one-time lazy init (parser tables), not steady-state.
-- **Bundle:** 40.91 KB raw / 12.12 KB gzip (optimal, family-guarded) vs 103.13 KB /
+- **Heap per workload (lower is better):** simple 141 KB (optimal) vs 1.23 MB
+  (tailwind-merge — its one-time lazy init, not steady-state); heavy 496 KB (optimal)
+  vs 313 KB; collection cache-on 1.37 MB (optimal) vs 1.13 MB; corpus 788 KB (optimal)
+  vs 653 KB; ultra-long 687 KB (optimal) vs 649 KB (tailwind-merge, cache off). The
+  optimal caches hold more entries (8,192 vs 500), so they win ~12× where
+  tailwind-merge's LRU-500 thrashes and stay within ~0.1 MB elsewhere; steady-state
+  allocation is zero (the generation swap reuses both objects).
+- **Bundle:** 41.36 KB raw / 12.14 KB gzip (optimal, family-guarded) vs 103.13 KB /
   17.36 KB (tailwind-merge) — −60% raw, −30% gzip on the same run ([size.md](size.md)).
 
 ## Parity
@@ -122,10 +128,19 @@ node bench/verify.mjs
   (the `trim()` copy is folded into the scan for the ≥7-char path).
 - `seen` (the conflict-key set) is **allocated lazily** — calls with no Tailwind classes
   never allocate it; calls with >64 distinct conflict keys promote it to a `Set`.
-- Both memos (`PC` per-class parse, `RC` whole-call result) are **Map-based LRUs**
-  bounded by `setCacheSize` (default 8,192; `0` disables): a hit re-inserts the entry to
-  keep recency, an over-full cache evicts the oldest entry. React renders repeat
-  identical class strings constantly, so repeated calls collapse to a single Map lookup.
+- Both memos (`PC` per-class parse, `RC` whole-call result) are **two-generation
+  object LRUs** bounded by `setCacheSize` (default 8,192; `0` disables): keys are
+  properties of null-prototype objects (never `Map`s), so a warm hit is a single
+  property read; there is no touch on a main-cache hit; a previous-generation hit
+  re-inserts on the spot; an insert past the bound swaps generations. React renders
+  repeat identical class strings constantly, so repeated calls collapse to one
+  property read. The old Map-based designs (delete+re-set touch, then linked-list
+  pointer surgery) measured 1.75×/1.10× behind on the corpus row; the object cache
+  turns it into a 1.43× win.
+- **Long-key flattening**: the join builds its key with the fastest rope concat, but
+  keys >1,024 chars are flattened (`slice(0)`) before the `RC` lookup — hashing a
+  deep cons-string rope on every call cost tens of µs on the 2,400-class workload
+  (that row was 1.35× behind and is now at parity).
 - **String-only entry**: `twMerge(str)` — the typical shape after `clsx(...)`
   (what `cn()` utils pass) — takes a single string and skips the join loop,
   rest-arg handling and `toValue` entirely; it looks the raw string up in `RC`

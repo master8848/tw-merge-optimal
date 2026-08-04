@@ -10,9 +10,11 @@ bundler plugins); behavior is verified against tailwind-merge's entire 349-case 
 corpus (see [docs/testing.md](docs/testing.md) and [docs/deviations.md](docs/deviations.md)).
 
 ```js
-import { twMerge, twJoin } from 'tw-merge-optimal'
+import { twMerge, twMergeJoin, twJoin } from 'tw-merge-optimal'
 
-twMerge('px-2 py-1 bg-red hover:bg-dark-red', 'p-3 bg-[#B91C1C]')
+twMerge('px-2 py-1 bg-red hover:bg-dark-red p-3 bg-[#B91C1C]')
+// → 'hover:bg-dark-red p-3 bg-[#B91C1C]'
+twMergeJoin('px-2 py-1 bg-red hover:bg-dark-red', 'p-3 bg-[#B91C1C]')
 // → 'hover:bg-dark-red p-3 bg-[#B91C1C]'
 twJoin('a', null, ['b', false, 'c']) // → 'a b c'
 ```
@@ -24,7 +26,7 @@ Tailwind CLI uses), derives conflict groups from the actual CSS your utilities g
 and emits a dependency-free `twMerge`/`twMergeJoin`/`twJoin` module. The bundle ships a
 **family-guarded pattern table** — only the families your scan uses (plus the
 conflict-edge closure) — and resolves every class at runtime through the pattern
-matcher, exactly like tailwind-merge would. Always-on Map-based LRU caches keep
+matcher, exactly like tailwind-merge would. Always-on object-LRU caches keep
 repeated renders a single lookup.
 
 ## Highlights
@@ -35,7 +37,7 @@ repeated renders a single lookup.
   signature; `twJoin` is the clsx-style join.
 - **No config** — the design system is declared in CSS via `@utility`/`@theme` (the same
   syntax Tailwind itself uses) and passed with `--css`.
-- **Fast** — ~9–9.5× faster than tailwind-merge on cold/dynamic inputs (cache off /
+- **Fast** — ~12× faster than tailwind-merge on cold/dynamic inputs (cache off /
   thrashing); the always-on 8,192-entry result cache makes repeated renders a single
   lookup; warm-cache steady state trades ~1.1–1.8× to tailwind-merge on the current
   matcher-only runtime ([docs/performance.md](docs/performance.md),
@@ -140,14 +142,14 @@ runtime-configurable too: `setCacheSize(0)` disables caching,
 | [docs/performance.md](docs/performance.md) | Benchmarks (honest numbers), heap, one-time init |
 | [docs/size.md](docs/size.md) | Bundle sizes, guarded vs full grammar |
 | [docs/migrating.md](docs/migrating.md) | Drop-in migration from tailwind-merge, use cases |
-| [docs/cli.md](docs/cli.md) | Full CLI reference, modes, examples, `--check` |
+| [docs/cli.md](docs/cli.md) | Full CLI reference, family guard, examples, `--check` |
 | [docs/testing.md](docs/testing.md) | Corpus, js-parity, validators truth tables |
 | [docs/deviations.md](docs/deviations.md) | Known deviations & limitations (v0.1) |
 | [docs/inspiration.md](docs/inspiration.md) | Project inspiration & similar projects |
 
 ## CLI
 
-Full CLI reference, options, modes and examples: [docs/cli.md](docs/cli.md).
+Full CLI reference, options, the family guard and examples: [docs/cli.md](docs/cli.md).
 
 ## Build-time plugins
 
@@ -171,11 +173,11 @@ Full guide: [packages/tw-merge-optimal/README.md](packages/tw-merge-optimal/READ
 
 ## Performance at a glance
 
-~9–9.5× faster than tailwind-merge on cold/dynamic inputs (always-on 8,192-entry
-result cache vs LRU-500); warm-cache steady state runs ~1.1–1.8× slower on the current
-matcher-only runtime (single runtime shape, no exact mode); zero init step vs ~1–8 ms
-lazy build on tailwind-merge's first call. Honest numbers, methodology and per-run
-records: [docs/performance.md](docs/performance.md), [bench/RESULTS.md](bench/RESULTS.md).
+~12× faster than tailwind-merge on cold/dynamic inputs (always-on 8,192-entry
+result cache vs LRU-500); warm-cache steady state is within ~1–2% of tailwind-merge
+(corpus row 1.43× in optimal's favor); zero init step vs ~1–8 ms lazy build on
+tailwind-merge's first call. Honest numbers, methodology and per-run records:
+[docs/performance.md](docs/performance.md), [bench/RESULTS.md](bench/RESULTS.md).
 
 ## Credits & Attribution
 

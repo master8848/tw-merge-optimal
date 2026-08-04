@@ -21,13 +21,15 @@ semantic versioning on the `twm-gen` binary / `tw-merge-optimal` package.
 
 - **Matcher-only runtime** — exact mode and the `G`-table/feature-flag shape
   are gone; every class resolves through the `BI`-indexed pattern matcher
-  with Map-based LRU result/parse caches.
+  with two-generation object LRU result/parse caches (null-prototype
+  property reads — no `Map`s, no touch on hit, generation swap at the
+  bound; long joined keys flattened before the lookup).
 - **Family-guarded pattern tables** — the bundler path ships only the
   utilities whose families the scanned classes use.
 - **Benchmark results recorded** in `bench/RESULTS.md` and
-  `docs/performance.md` (2026-08-04 run, commit `239fdea`): ~9.2–9.5× wins
-  on cold/dynamic inputs; warm-cache rows run ~1.1–1.8× slower than
-  tailwind-merge (regression vs the old exact-mode parity, honestly noted).
+  `docs/performance.md` (2026-08-04 runs): ~12× wins on cold/dynamic
+  inputs; warm-cache rows within ~1–2% of tailwind-merge, corpus 1.43× in
+  optimal's favor.
 
 ### Fixed
 
