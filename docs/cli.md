@@ -30,6 +30,10 @@ tailwind-merge's heuristics. The scanned classes decide *which* grammar
 ships; the smaller and more specialized the project, the smaller the bundle
 (see [size.md](size.md)).
 
+The stderr summary is always
+`twm-gen: N files scanned, N unique candidates, N families, wrote OUT (N bytes)`
+with `, extend` appended when `--extend` is set.
+
 ## Examples
 
 Generate a bundle for your sources:

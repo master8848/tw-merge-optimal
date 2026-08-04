@@ -200,8 +200,9 @@ dependency-free ESM module. The bundle layout is described in
 [runtime.md](runtime.md); the key design points:
 
 - every table is emitted as **static data** (`W`, `FN`, `PR`, `W2`, `TH`,
-  `KW`, `P`, `BI`, …), prototype-less objects where a fast `in` check is
-  used,
+  `KW`, `P`, `BI`, …); the map tables (`PR`, `BI`) are prototype-less
+  objects (`Object.assign(Object.create(null), …)`) so no inherited key
+  (e.g. `toString`) can ever collide with a lookup,
 - there is exactly **one runtime shape** — matcher-only: no `G` table, no
   feature flags; postfix, important and arbitrary values are always parsed
   and every class resolves through the matcher `m()` (indexed by the `BI`

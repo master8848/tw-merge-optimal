@@ -43,7 +43,7 @@
 
 ```sh
 cargo build
-cargo test                      # 20 lib + 58 corpus + 1 js-parity + 25 validators + 1 patterns
+cargo test                      # 20 lib + 58 corpus + 1 js-parity + 25 validators + 2 patterns
 cargo test -- --include-ignored # + the 2 documented known-deviation placeholders
 ```
 

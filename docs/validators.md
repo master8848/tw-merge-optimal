@@ -9,7 +9,7 @@ used by `--value(...)` catalog markers.
 Validators run **at build time only**: `twm-gen` uses them to decide whether a
 candidate class resolves against a wildcard utility's alternatives. The
 generated JS carries an equivalent `VT` switch (`generate.rs::VT_CASES`) so
-patterns mode can validate unseen classes at runtime.
+the runtime matcher can validate unseen classes the same way.
 
 ## Plain value validators
 
