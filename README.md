@@ -21,10 +21,11 @@ twJoin('a', null, ['b', false, 'c']) // → 'a b c'
 
 `twm-gen` scans your project with `tailwindcss-oxide` (the same candidate extractor the
 Tailwind CLI uses), derives conflict groups from the actual CSS your utilities generate,
-and emits a dependency-free `twMerge`/`twJoin` module. Patterns mode (default) also embeds
-the full design-system grammar, so classes the scanner never saw still merge like
-tailwind-merge would. At runtime merging is O(1) table lookups with an always-on
-whole-call result cache.
+and emits a dependency-free `twMerge`/`twMergeJoin`/`twJoin` module. The bundle ships a
+**family-guarded pattern table** — only the families your scan uses (plus the
+conflict-edge closure) — and resolves every class at runtime through the pattern
+matcher, exactly like tailwind-merge would. Always-on Map-based LRU caches keep
+repeated renders a single lookup.
 
 ## Highlights
 
@@ -34,12 +35,13 @@ whole-call result cache.
   signature; `twJoin` is the clsx-style join.
 - **No config** — the design system is declared in CSS via `@utility`/`@theme` (the same
   syntax Tailwind itself uses) and passed with `--css`.
-- **Fast** — ~12× faster than tailwind-merge on cold/dynamic inputs (cache off /
-  thrashing); parity-or-better on warm typical calls (single-string calls run 1.3–1.4×
-  faster — the `clsx()` + `twMerge(joined)` shape) — and the always-on 8,192-entry
-  result cache makes repeated renders a single lookup ([docs/performance.md](docs/performance.md)).
-- **Tiny** — exact mode (`--no-patterns`) emits only the scanned classes: 4.2 KB
-  (small sample), ~16–21 KB on the full corpus/bench unions ([docs/size.md](docs/size.md)).
+- **Fast** — ~9–9.5× faster than tailwind-merge on cold/dynamic inputs (cache off /
+  thrashing); the always-on 8,192-entry result cache makes repeated renders a single
+  lookup; warm-cache steady state trades ~1.1–1.8× to tailwind-merge on the current
+  matcher-only runtime ([docs/performance.md](docs/performance.md),
+  [bench/RESULTS.md](bench/RESULTS.md)).
+- **Tiny** — one family-guarded matcher bundle, no exact mode: 13.7 KB (small sample),
+  ~37–42 KB on the full corpus/bench unions ([docs/size.md](docs/size.md)).
 - **`--check` CI conflict gating** — fails the build when conflicting classes are used.
 - **Bundler plugins** — Vite, Rspack, Rsbuild, webpack, Bun, Next.js, Babel.
 
@@ -110,21 +112,21 @@ import { twMerge, twJoin } from './src/tw-merge.mjs'
 
 Regenerate whenever your design system or class usage changes.
 
-### Drop-in sub-import (patterns mode, zero setup)
+### Drop-in sub-import (no bundler, zero setup)
 
-`tw-merge-optimal/pattern` ships a **prebuilt patterns-mode bundle** — the full
-design-system grammar plus a 962-class table — so any class the design system
-knows resolves at runtime. No plugin, no generation step:
+`tw-merge-optimal/pattern` ships a **prebuilt bundle** — the full unguarded
+design-system grammar plus the matcher-only runtime — so any class the design
+system knows resolves at runtime. No plugin, no generation step:
 
 ```js
 import { twMerge, twJoin } from 'tw-merge-optimal/pattern'
 ```
 
-Verified against the full 349-case corpus. Patterns mode is also the mode the
-CLI and bundler plugins use, so the same bundle **optimized per project**
-(only your classes, only the feature flags you use — no prefix machinery if
-you don't use prefixes, etc.) drops in with identical semantics. Cache bound
-is runtime-configurable too: `setCacheSize(0)` disables caching,
+Verified against the full 349-case corpus. The CLI and bundler plugins run
+the **same matcher-only runtime** on a family-guarded table, so the bundle
+**optimized per project** (only the families your scan uses — no unused
+grammar) drops in with identical semantics. Cache bound is
+runtime-configurable too: `setCacheSize(0)` disables caching,
 `setCacheSize(500)` matches tailwind-merge's default — see
 [docs/runtime.md](docs/runtime.md).
 
@@ -133,10 +135,10 @@ is runtime-configurable too: `setCacheSize(0)` disables caching,
 | Doc | Covers |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | The build-time pipeline, module by module (scan → parse → resolve → group → conflict → generate) |
-| [docs/runtime.md](docs/runtime.md) | The generated bundle: tables, flags, `twMerge` control flow |
+| [docs/runtime.md](docs/runtime.md) | The generated bundle: tables, matcher, caches, `twMerge` control flow |
 | [docs/validators.md](docs/validators.md) | Value validators and the JS port |
 | [docs/performance.md](docs/performance.md) | Benchmarks (honest numbers), heap, one-time init |
-| [docs/size.md](docs/size.md) | Bundle sizes, exact vs patterns mode |
+| [docs/size.md](docs/size.md) | Bundle sizes, guarded vs full grammar |
 | [docs/migrating.md](docs/migrating.md) | Drop-in migration from tailwind-merge, use cases |
 | [docs/cli.md](docs/cli.md) | Full CLI reference, modes, examples, `--check` |
 | [docs/testing.md](docs/testing.md) | Corpus, js-parity, validators truth tables |
@@ -169,10 +171,11 @@ Full guide: [packages/tw-merge-optimal/README.md](packages/tw-merge-optimal/READ
 
 ## Performance at a glance
 
-Parity on typical short calls (1.0–1.05×, flips run to run); ~12× faster on
-cold/dynamic inputs (always-on 8,192-entry result cache); patterns and exact modes
-measure identically; zero init step vs ~1–8 ms lazy build on tailwind-merge's first
-call. Honest numbers and methodology: [docs/performance.md](docs/performance.md).
+~9–9.5× faster than tailwind-merge on cold/dynamic inputs (always-on 8,192-entry
+result cache vs LRU-500); warm-cache steady state runs ~1.1–1.8× slower on the current
+matcher-only runtime (single runtime shape, no exact mode); zero init step vs ~1–8 ms
+lazy build on tailwind-merge's first call. Honest numbers, methodology and per-run
+records: [docs/performance.md](docs/performance.md), [bench/RESULTS.md](bench/RESULTS.md).
 
 ## Credits & Attribution
 

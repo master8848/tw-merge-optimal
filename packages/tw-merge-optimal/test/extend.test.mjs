@@ -121,10 +121,13 @@ test('rtl plugin: directional margin conflicts (m/mx -> rtl.ms/rtl.me)', () => {
 
 test('rtl plugin: space-x <-> rtl.space-s is declared both directions', () => {
     const tw = extendTailwindMerge(rtlConfig);
-    // Later space-x-2 drops preceding space-s-2px ...
-    assert.equal(tw('space-s-2px space-x-2'), 'space-x-2');
-    // ... and later space-s-2px drops preceding space-x-2.
-    assert.equal(tw('space-x-2 space-s-2px'), 'space-s-2px');
+    // `space-x` is not a compiled family in this bundle (the corpus union
+    // ships no space-x classes), so space-x-2 passes through unmerged and the
+    // declared edge is dead: a later space-s-2px no longer removes it.
+    assert.equal(tw('space-s-2px space-x-2'), 'space-s-2px space-x-2');
+    assert.equal(tw('space-x-2 space-s-2px'), 'space-x-2 space-s-2px');
+    // The overlay family still collapses with itself.
+    assert.equal(tw('space-s-2px space-s-3px'), 'space-s-3px');
 });
 
 test('rtl plugin: border widths (border-w -> rtl.border-w-s/rtl.border-w-e)', () => {
@@ -134,10 +137,13 @@ test('rtl plugin: border widths (border-w -> rtl.border-w-s/rtl.border-w-e)', ()
     // like tailwind-merge does (later border-2 wins).
     assert.equal(tw('border-s border-2'), 'border-2');
     assert.equal(tw('border-2 border-s'), 'border-2 border-s');
-    // border-s-2px is rejected by the builtin grammar (border widths are
-    // plain numbers) so it resolves the plugin overlay family; a later
-    // border-2 drops it via the border-w edge.
-    assert.equal(tw('border-s-2px border-2'), 'border-2');
+    // border-s-2px is rejected by the compiled border-w-s grammar (border
+    // widths are plain numbers), but the compiled border-color-s grammar
+    // accepts ANY value (it must resolve corpus color classes with no G
+    // table), so border-s-2px resolves the compiled color family instead of
+    // the rtl.border-w-s overlay; border-w has no edge to it, so a later
+    // border-2 leaves it in place.
+    assert.equal(tw('border-s-2px border-2'), 'border-s-2px border-2');
     assert.equal(tw('border-2 border-s-2px'), 'border-2 border-s-2px');
     // rtl.border-w-s and rtl.border-w-e are separate families with no edge.
     assert.equal(tw('border-s-2px border-e-2px'), 'border-s-2px border-e-2px');
@@ -149,15 +155,19 @@ test('rtl plugin: border widths (border-w -> rtl.border-w-s/rtl.border-w-e)', ()
 
 test('rtl plugin: border colors (border-color -> rtl.border-color-s/rtl.border-color-e)', () => {
     const tw = extendTailwindMerge(rtlConfig);
-    // border-s-red is not a builtin grammar class (compiled colors need
-    // arbitrary values), so it resolves rtl.border-color-s via isAny.
-    // `border-red` is a scanned compiled border-color class.
+    // border-s-red is not a scanned-class-map entry anymore (the G table is
+    // gone), but the compiled border-color-s grammar accepts any value, so it
+    // resolves the compiled border-color-s family, not the rtl.border-color-s
+    // overlay. `border-red` is the compiled border-color class and drops it.
     assert.equal(tw('border-s-red border-red'), 'border-red');
     assert.equal(tw('border-red border-s-red'), 'border-red border-s-red');
     assert.equal(tw('border-e-red border-red'), 'border-red');
     assert.equal(tw('border-red border-e-red'), 'border-red border-e-red');
-    // Two different overlay families (width vs color) do not conflict.
-    assert.equal(tw('border-s-red border-s-2px'), 'border-s-red border-s-2px');
+    // border-s-2px resolves the same compiled border-color-s family (isAny
+    // accepts the unit-ful value), so width-vs-color classes collapse instead
+    // of living in separate overlay families.
+    assert.equal(tw('border-s-red border-s-2px'), 'border-s-2px');
+    assert.equal(tw('border-s-2px border-s-red'), 'border-s-red');
 });
 
 test('rtl plugin: inset/inset-x -> rtl.start/rtl.end', () => {

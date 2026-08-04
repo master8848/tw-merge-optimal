@@ -65,15 +65,17 @@
   `p-4 [padding:1rem]` as-is because its config has no CSS property knowledge;
   ours is derived from the catalog (`families.rs` `prop_family`), so this
   documented limitation is solved here. Verified by
-  `deviation_arbitrary_property_merging` (14 cases, both bundles).
+  `deviation_arbitrary_property_merging` (14 cases, all bundles).
 - **Result caching is always on.** tailwind-merge ships an opt-in LRU-500 result cache
-  (`cacheSize` config); tw-merge-optimal's `RC`/`PC` caches are always active, bounded
-  at 8,192 entries and resettable at runtime via `setCacheSize(n)` (0 disables them).
+  (`cacheSize` config); tw-merge-optimal's `RC`/`PC` caches are always active Map-based
+  LRUs (touch-on-get, evict-oldest at the bound), bounded at 8,192 entries and
+  resettable at runtime via `setCacheSize(n)` (0 disables them).
   Purely a performance mechanism — output is byte-identical with or without it, verified
-  by the 349-case parity suite in both cached and cache-off passes
-  (`PARITY` / `CACHE_OFF_PARITY`). This is why the warm-cache rows in
-  [performance.md](performance.md) are parity-or-better instead of tailwind-merge
-  winning on its own cache.
+  by the 349-case parity suite in cached, cache-off and tiny-LRU passes
+  (`PARITY` / `CACHE_OFF_PARITY` / `LRU_PARITY`, the last with a 16-entry bound that
+  evicts on every insert). This is why the warm-cache rows in
+  [performance.md](performance.md) stay close to tailwind-merge instead of paying the
+  matcher scan on every render.
 - The catalog is authored, condensed and curated for the corpus, not a verbatim copy of
   tailwindcss's utilities; exotic utilities outside the corpus may not resolve (they
   then pass through untouched, like unknown classes — the safe direction).
@@ -84,10 +86,14 @@
 # Limitations (v0.1)
 
 - The generated JS bundle is per-project: add a new class to your sources and re-run
-  `twm-gen`. With patterns mode (default) classes the scanner missed still resolve at
-  runtime; only `--no-patterns` bundles have no fallback. Dynamic classes that follow
-  no design-system pattern (undeclared custom classes) pass through unmerged in both
-  modes — the safe direction.
+  `twm-gen`. The bundle is family-guarded: classes from the scanned families — seen or
+  not — still resolve at runtime through the matcher; a class from a family the scan
+  never saw passes through unmerged (the safe direction, and it can't conflict with
+  anything anyway, because nothing in its family was scanned either). The checked-in
+  no-bundler bundles (`full.mjs`, `./pattern`) embed the full unguarded grammar and
+  have no such limit. Dynamic classes that follow no design-system pattern
+  (undeclared custom classes) pass through unmerged in all bundles — the safe
+  direction.
 - Only the default design system ships; custom `@utility` rules require `--css`.
 - `twJoin` accepts strings and nested arrays; Rust-side falsy-value semantics follow
   the ported corpus (`JoinValue`).

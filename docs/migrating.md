@@ -38,9 +38,9 @@ takes five steps:
    `--css`. One source of truth, no parallel config.
 
 4. **Re-run generation when your classes change.** Plugins regenerate on every
-   build; with the CLI, re-run `twm-gen`. Patterns mode (default) keeps classes the
-   scanner never saw resolving at runtime, so a stale bundle degrades gracefully
-   instead of breaking.
+   build; with the CLI, re-run `twm-gen`. The family guard keeps classes the
+   scanner never saw resolving at runtime (as long as their family was
+   scanned), so a stale bundle degrades gracefully instead of breaking.
 
 5. **Check the differences.** Everything tailwind-merge does is preserved except the
    config API; the two deliberate behavior changes are that arbitrary properties
@@ -59,14 +59,14 @@ that's the one-line replacement.
 **Good fit**
 
 - Perf-critical rendering — React-heavy apps, server components, or hot paths where
-  class-merging happens thousands of times per render; tw-merge-optimal wins 9–11× on
-  cold/dynamic inputs and is at parity on typical calls (see
+  class-merging happens thousands of times per render; the always-on LRU caches make
+  repeated renders a single lookup, and tw-merge-optimal wins ~9–10× on
+  cold/dynamic inputs where tailwind-merge's cache can't help (see
   [performance.md](performance.md)).
-- Bundle-size-sensitive projects — the runtime is a few KB of static ESM data (pure
-  browser ESM, no WASM, no config); exact mode (`--no-patterns`) emits only the
-  classes your project uses (see [size.md](size.md)).
-- Dynamic class strings — CMS content, runtime-composed classes: patterns mode
-  (default) resolves classes the scanner never saw.
+- Bundle-size-sensitive projects — the family-guarded bundle is 13.7 KB raw for a
+  small project, 41.9 KB / 12.4 KB gzip at bench scale (see [size.md](size.md)).
+- Dynamic class strings — CMS content, runtime-composed classes: the matcher
+  resolves classes the scanner never saw, as long as their family was scanned.
 - CI conflict gating — `--check` fails the build when conflicting classes are used,
   catching dead styling before it ships.
 

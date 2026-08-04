@@ -24,8 +24,9 @@ resolves to the properties it writes, and families (`padding` → `p`,
 `padding-inline` → `px`) plus directed shorthand edges fall out of that, with
 a small override table (`families.rs`) for known special cases. The design
 system stays in sync with Tailwind, and because all of this happens at build
-time, the runtime collapses to O(1) table lookups over a tiny per-project
-bundle — no parser, no config, no WASM in the browser.
+time, the runtime collapses to a tiny pattern-matcher bundle over a
+family-guarded per-project table — no parser, no config, no WASM in the
+browser.
 
 ## The landscape
 
@@ -53,7 +54,7 @@ The layer this project actually competes in:
 |---|---|---|
 | [tailwind-merge](https://github.com/dcastil/tailwind-merge) | Hand-maintained class-group config + trie-based parser, shipped as JS | ~103 KB raw / ~17.4 KB gzip full bundle; ~57.8M weekly downloads — the de-facto standard |
 | [tw-merge](https://www.npmjs.com/package/tw-merge) (illiaChaban) | "Framework agnostic, based on css file" — generates a minimized config from your `index.css`, merges on a last-class-wins basis | Generated JS config object |
-| **tw-merge-optimal** | Build-time scan (tailwindcss-oxide) + conflict groups derived from generated CSS, emitted as static-data ESM | ~2.2 KB fixed runtime + tables; 3.8 KB sample / ~20.6 KB exact (962 classes), 65.7 KB raw / 18.7 KB gzip patterns |
+| **tw-merge-optimal** | Build-time scan (tailwindcss-oxide) + conflict groups derived from generated CSS, emitted as a matcher-only static-data ESM bundle (family-guarded) | ~2 KB fixed runtime + guarded tables; 13.7 KB raw small sample / 41.9 KB raw (12.4 KB gzip) at bench scale (962 classes), 47.5 KB raw extend |
 
 tw-merge is the closest sibling in spirit: both derive merge knowledge from
 the design system instead of a hand-maintained class map. The difference is
@@ -95,15 +96,17 @@ write).
   `tailwindcss-oxide` means the merge bundle sees exactly the candidates the
   Tailwind CLI would see; custom utilities enter through the same
   `@utility`/`@theme` CSS syntax Tailwind itself uses — one source of truth.
-- **Build-time compilation makes the runtime trivial**: O(1) table lookups
-  over static data with a result cache that is always on — parity with
-  tailwind-merge on typical short calls and 9–11× faster where its cache
-  can't help (cold/dynamic inputs; see [performance.md](performance.md)).
-  No WASM, no config, no runtime parsing — pure browser-ready ESM.
-- **Per-project bundles**: only the classes your project uses are emitted
-  (plus the full pattern grammar by default so unseen classes still resolve),
-  reaching gzip-comparable sizes with tailwind-merge's full bundle in patterns
-  mode (~20.1 vs 17.4 KB) and a few KB in exact mode.
+- **Build-time compilation makes the runtime trivial**: every class resolves
+  through an indexed pattern matcher over static data, with Map-based LRU
+  result caches that are always on — warm typical calls run ~1.1–1.8× slower
+  than tailwind-merge's (steady-state cache hits), and ~9–9.5× faster where
+  its cache can't help (cold/dynamic inputs; see
+  [performance.md](performance.md)). No WASM, no config, no runtime parsing —
+  pure browser-ready ESM.
+- **Per-project bundles**: only the classes your project uses decide the
+  family guard — plus the scanned families' grammar so unseen classes still
+  resolve — reaching 41.9 KB raw / 12.4 KB gzip at bench scale (~13.7 KB raw
+  for a small project) versus tailwind-merge's constant 103.1 KB / 17.4 KB.
 
 ## Credits & attribution
 

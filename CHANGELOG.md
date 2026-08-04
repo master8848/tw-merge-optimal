@@ -17,6 +17,18 @@ semantic versioning on the `twm-gen` binary / `tw-merge-optimal` package.
   bundle: tables, flags, control flow).
 - Contributing guide, code of conduct, security policy.
 
+### Changed
+
+- **Matcher-only runtime** — exact mode and the `G`-table/feature-flag shape
+  are gone; every class resolves through the `BI`-indexed pattern matcher
+  with Map-based LRU result/parse caches.
+- **Family-guarded pattern tables** — the bundler path ships only the
+  utilities whose families the scanned classes use.
+- **Benchmark results recorded** in `bench/RESULTS.md` and
+  `docs/performance.md` (2026-08-04 run, commit `239fdea`): ~9.2–9.5× wins
+  on cold/dynamic inputs; warm-cache rows run ~1.1–1.8× slower than
+  tailwind-merge (regression vs the old exact-mode parity, honestly noted).
+
 ### Fixed
 
 - README corpus counts: 349 cases / 51 groups (was 335 / 57 stale numbers).
