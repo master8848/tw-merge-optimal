@@ -16,6 +16,14 @@
   ours is derived from the catalog (`families.rs` `prop_family`), so this
   documented limitation is solved here. Verified by
   `deviation_arbitrary_property_merging` (14 cases, both bundles).
+- **Result caching is always on.** tailwind-merge ships an opt-in LRU-500 result cache
+  (`cacheSize` config); tw-merge-optimal's `RC`/`PC` caches are always active, bounded
+  at 8,192 entries and resettable at runtime via `setCacheSize(n)` (0 disables them).
+  Purely a performance mechanism — output is byte-identical with or without it, verified
+  by the 349-case parity suite in both cached and cache-off passes
+  (`PARITY` / `CACHE_OFF_PARITY`). This is why the warm-cache rows in
+  [performance.md](performance.md) are parity-or-better instead of tailwind-merge
+  winning on its own cache.
 - The catalog is authored, condensed and curated for the corpus, not a verbatim copy of
   tailwindcss's utilities; exotic utilities outside the corpus may not resolve (they
   then pass through untouched, like unknown classes — the safe direction).

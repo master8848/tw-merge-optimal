@@ -24,28 +24,31 @@ classes).
 
 | Workload | tailwind-merge | optimal (patterns) | optimal (exact) | ratio |
 |---|---|---|---|---|
-| simple (2 classes, both caches warm) | 552k ops/s | 526k ops/s | 536k ops/s | ~parity (tw 1.05×) |
-| heavy (real-world 10-arg call, caches warm) | 390k ops/s | 382k ops/s | 387k ops/s | ~parity (tw 1.02×) |
-| corpus (349 cases, caches warm) | 59k ops/s | 58k ops/s | 58k ops/s | ~parity (tw 1.02×) |
-| collection ×1,322 (tw cache off) | 109 ops/s | 1,358 ops/s | 1,325 ops/s | **12.4×** (optimal) |
-| ultra-long list (2,400 classes, tw cache off) | 1,488 ops/s | 18,488 ops/s | 18,558 ops/s | **12.4×** (optimal) |
-| collection ×1,322 (tw cache on) | 1,366 ops/s | 1,358 ops/s | 1,325 ops/s | ~parity (tw 1.01×) |
-| ultra-long list (2,400 classes, tw cache on) | 18,701 ops/s | 18,488 ops/s | 18,558 ops/s | ~parity (tw 1.01×) |
+| simple (2 classes, both caches warm) | 543k ops/s | 538k ops/s | 543k ops/s | ~parity |
+| heavy (real-world 10-arg call, caches warm) | 382k ops/s | 381k ops/s | 379k ops/s | ~parity |
+| corpus (349 cases, caches warm) | 58k ops/s | 77k ops/s | 79k ops/s | **1.32–1.36×** (optimal) |
+| collection ×1,322 (tw cache off) | 107 ops/s | 1,338 ops/s | 1,336 ops/s | **12.5×** (optimal) |
+| ultra-long list (2,400 classes, tw cache off) | 1,463 ops/s | 18,672 ops/s | 18,494 ops/s | **12.7×** (optimal) |
+| collection ×1,322 (tw cache on) | 1,345 ops/s | 1,338 ops/s | 1,336 ops/s | ~parity |
+| ultra-long list (2,400 classes, tw cache on) | 18,520 ops/s | 18,672 ops/s | 18,494 ops/s | ~parity |
 
-Run twice with identical results (±0.15–0.8% relative margin of error per row); patterns
-vs exact differs by < 0.3%.
+Run twice with identical results (±0.16–0.8% relative margin of error per row); patterns
+vs exact differs by < 0.5%.
 
 ## Honest reading
 
-- **Short typical calls (simple/heavy/corpus): parity**, within run-to-run variance.
-  tailwind-merge's leaner join gives it a small edge on fully-cached short calls
-  (1.02–1.15×); the ratios flip run to run. The old "134×/110×/200×" claims are
-  retracted — they measured tailwind-merge constructing a fresh instance (config +
-  parser build) inside every measured call.
-- **tw-merge-optimal wins ~12× only where tailwind-merge's result cache can't help**
+- **Short typical calls (simple/heavy): parity**, within run-to-run variance — the
+  fully-cached path is a single join + table lookup in both implementations, so neither
+  has a structural edge. The old "134×/110×/200×" claims are retracted — they measured
+  tailwind-merge constructing a fresh instance (config + parser build) inside every
+  measured call.
+- **Corpus (single-string calls): tw-merge-optimal wins 1.3–1.4×.** The single-argument
+  fast path skips the join loop entirely — the typical real-world shape
+  (`clsx(...)` + `twMerge(joinedString)`), and the one that matters most.
+- **tw-merge-optimal wins ~12× where tailwind-merge's result cache can't help**
   (cache disabled, or thrashing on long/dynamic inputs): its cache is always-on and
   holds 8,192 entries; tailwind-merge's is LRU-500 (v3 default) and opt-in-offable.
-  (Latest clean run: 12.4× on both the collection and ultra-long workloads.)
+  (Latest clean run: 12.5× collection, 12.7× ultra-long.)
 - **Patterns and exact modes are performance-identical** — exact mode costs nothing
   but coverage (see [size.md](size.md)).
 - **One-time init (not per-call):** tailwind-merge pays a lazy init of ~1–8 ms
@@ -104,6 +107,15 @@ node bench/verify.mjs
   bounded at 8,192 entries. React renders repeat identical class strings constantly, so
   repeated calls collapse to a single object lookup (tailwind-merge's configurable
   cacheSize, without the configuration).
+- **Single-argument fast path**: `twMerge(str)` — the typical shape after
+  `clsx(...)` — skips the join loop entirely and looks the raw string up in `RC`
+  directly. Multi-arg calls join with an **inlined string-first loop** (no
+  `toValue` call per element, no re-spread of the argument array).
+- **Split hot entry**: `twMerge` is a tiny wrapper (join + cache lookup) that delegates
+  the merge body to a cold `M()` function — mirroring tailwind-merge's structure so V8
+  fully optimizes the warm path instead of a single 2 KB function.
+- `twJoin` inlines the string check per element (`typeof a==='string' ? a :
+  toValue(a)`), so the common all-strings call never invokes a helper.
 - **Pattern fallback by default**: the bundle embeds the design system's full grammar;
   classes the scanner missed resolve at runtime via the `m()` matcher — the O(1) `G`
   table stays the hot path, patterns only run on miss. `m()` is indexed by a

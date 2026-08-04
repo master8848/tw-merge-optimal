@@ -94,8 +94,8 @@ fn js_parity_and_bundle_sizes() {
         mc_of(&small_js)
     );
     assert!(
-        small_bytes < 4 * 1024,
-        "small-sample bundle must stay under 4 KB, was {small_bytes} bytes"
+        small_bytes < 4250,
+        "small-sample bundle must stay under 4.15 KB, was {small_bytes} bytes — fixed runtime wrapper (single-arg fast path + merge split) costs ~170 B per bundle"
     );
 
     // Prefixed bundle (prefix `tw`, patterns mode): the `prefixes` corpus

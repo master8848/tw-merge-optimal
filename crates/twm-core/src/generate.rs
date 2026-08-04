@@ -383,9 +383,11 @@ const SORT_MODIFIERS_JS: &str = r#"
 const OS=new Set(['*','**','after','backdrop','before','details-content','file','first-letter','first-line','marker','placeholder','selection']);function sm(x){const r=[];let s=[];for(let i=0;i<x.length;i++){const m=x[i];if(m[0]==='['||OS.has(m)){if(s.length){s.sort();r.push(...s);s=[]}r.push(m)}else s.push(m)}if(s.length){s.sort();r.push(...s)}return r}
 "#;
 
-/// `twJoin` (port of `tw-join.ts`, itself derived from clsx).
+/// `twJoin` (port of `tw-join.ts`, itself derived from clsx). The string
+/// check is inlined per element so the common all-strings call never pays a
+/// `toValue` call (matches the inline loop in `twMerge`'s wrapper).
 const TW_JOIN_JS: &str = r#"
-export function twJoin(...x){let s='';for(let i=0;i<x.length;i++){const a=x[i];if(a){const v=toValue(a);if(v){s&&(s+=' ');s+=v}}}return s}
+export function twJoin(...x){let s='';for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){s&&(s+=' ');s+=v}}return s}
 function toValue(m){if(typeof m==='string')return m;let s='';for(let k=0;k<m.length;k++){if(m[k]){const v=toValue(m[k]);if(v){s&&(s+=' ');s+=v}}}return s}
 "#;
 
@@ -411,7 +413,7 @@ function toValue(m){if(typeof m==='string')return m;let s='';for(let k=0;k<m.len
 /// (tailwind-merge `cacheSize` parity); `0` disables both caches.
 fn tw_merge_js(prefix: Option<&str>) -> String {
     let mut js = String::from(
-        "let RC=Object.create(null),RCn=0;export function twMerge(...x){const l=twJoin(...x),h=RC[l];if(h!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC[l]=r;RCn++}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
+        "let RC=Object.create(null),RCn=0,h;export function twMerge(...x){if(x.length===1&&typeof x[0]==='string'&&(h=RC[x[0]])!==undefined)return h;let l='';if(x.length===1&&typeof x[0]==='string')l=x[0];else for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){l&&(l+=' ');l+=v}}if((h=RC[l])!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}return M(l)}function M(l){const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC[l]=r;RCn++}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
     );
     if let Some(p) = prefix {
         js.push_str(&format!(
@@ -431,7 +433,7 @@ fn tw_merge_js(prefix: Option<&str>) -> String {
 /// are emitted only when those families exist.
 fn tw_merge_patterns_js(p: &PatternTable, prefix: Option<&str>) -> String {
     let mut js = String::from(
-        "let RC=Object.create(null),RCn=0;export function twMerge(...x){const l=twJoin(...x),h=RC[l];if(h!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC[l]=r;RCn++}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
+        "let RC=Object.create(null),RCn=0,h;export function twMerge(...x){if(x.length===1&&typeof x[0]==='string'&&(h=RC[x[0]])!==undefined)return h;let l='';if(x.length===1&&typeof x[0]==='string')l=x[0];else for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){l&&(l+=' ');l+=v}}if((h=RC[l])!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}return M(l)}function M(l){const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC[l]=r;RCn++}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
     );
     if let Some(pfx) = prefix {
         js.push_str(&format!(
