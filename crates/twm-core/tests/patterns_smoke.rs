@@ -94,6 +94,7 @@ fn patterns_smoke_and_bundle_size() {
         &GenerateOptions {
             prefix: None,
             patterns: true,
+            ..Default::default()
         },
     );
 
@@ -195,6 +196,7 @@ fn patterns_matcher_resolves_unseen_classes() {
         &GenerateOptions {
             prefix: None,
             patterns: true,
+            ..Default::default()
         },
     );
 

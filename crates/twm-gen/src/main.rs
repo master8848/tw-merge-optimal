@@ -1,6 +1,7 @@
 //! twm-gen — build-time Tailwind class-merge generator.
 //!
-//! Usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--check] <globs-or-paths...>
+//! Usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--config <file>]
+//!                [--extend] [--check] <globs-or-paths...>
 //!
 //! Scans candidates with tailwindcss-oxide, derives conflict groups from the
 //! design system CSS, and either emits a minimal JS `twMerge`/`twJoin` bundle
@@ -10,12 +11,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::ExitCode;
 
-use twm_core::conflict::conflict_key;
+use twm_core::config::{parse_config_json, PluginConfig};
+use twm_core::conflict::{apply_plugin_config, conflict_key};
 use twm_core::generate::{generate_js, GenerateOptions};
 use twm_core::patterns::PatternTable;
 use twm_core::scan::{line_col, scan_content};
 use twm_core::tw_merge;
-use twm_core::{default_design_system, ConflictTable, DesignSystem};
+use twm_core::{default_design_system_with_plugin, ConflictTable, DesignSystem};
 
 struct Args {
     css: Option<String>,
@@ -23,6 +25,8 @@ struct Args {
     prefix: Option<String>,
     check: bool,
     patterns: bool,
+    config: Option<String>,
+    extend: bool,
     paths: Vec<String>,
 }
 
@@ -30,12 +34,17 @@ fn usage() -> ! {
     eprintln!(
         "twm-gen v0.1 — build-time Tailwind class-merge generator\n\
          \n\
-         usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--no-patterns] [--check] <globs-or-paths...>\n\
+         usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--config <file>] [--extend]\n\
+         \x20              [--no-patterns] [--check] <globs-or-paths...>\n\
          \n\
          options:\n\
          \x20 --css <file>    extra @utility/@theme CSS to extend the design system\n\
+         \x20 --config <file> tailwind-merge-style plugin config JSON (classGroups /\n\
+         \x20                  conflictingClassGroups) merged into the design system\n\
          \x20 --out <file>    write the generated JS bundle to <file> (default: stdout)\n\
          \x20 --prefix <p>    only treat classes with the `p:` prefix as Tailwind classes\n\
+         \x20 --extend        emit the runtime extend API (extendTailwindMerge, validators,\n\
+         \x20                  ...) plus the overlay machinery for runtime configs\n\
          \x20 --no-patterns   emit only the scanned classes (smaller bundle; classes the\n\
          \x20                  scanner missed pass through unmerged — default is full\n\
          \x20                  pattern-table resolution, so unseen classes still merge)\n\
@@ -54,7 +63,12 @@ fn main() -> ExitCode {
         usage();
     }
 
-    let ds = build_design_system(args.css.as_deref());
+    let cfg = args.config.as_deref().map(load_config);
+    let plugin_utils = cfg
+        .as_ref()
+        .map(|c| c.to_synthetic_utilities())
+        .unwrap_or_default();
+    let ds = build_design_system(args.css.as_deref(), &plugin_utils);
     let prefix = args.prefix.as_deref();
 
     let mut files = Vec::new();
@@ -81,18 +95,29 @@ fn main() -> ExitCode {
     }
 
     if args.check {
-        return run_check(&ds, prefix, &hits);
+        return run_check(&ds, prefix, cfg.as_ref(), &hits);
     }
 
     // Patterns mode: build the full design-system pattern table and seed the
     // conflict table with its family ids, so exact and pattern lookups share
-    // one numbering.
+    // one numbering. The pattern table covers the merged design system, so
+    // plugin classes resolve through it too.
     let patterns = args.patterns.then(|| PatternTable::from_design_system(&ds));
     let table = match &patterns {
         Some(p) => {
             ConflictTable::from_classes_seeded(&ds, &all_classes, prefix, p.family_names.clone())
         }
-        None => ConflictTable::from_classes(&ds, &all_classes, prefix),
+        None => {
+            let mut t = ConflictTable::from_classes(&ds, &all_classes, prefix);
+            // Exact mode: patch the compiled table with the plugin config
+            // (statics resolve, directed edges patch every entry of the
+            // source family); wildcard-only edges stay for the runtime
+            // overlay emission.
+            if let Some(c) = cfg.as_ref() {
+                let _ = apply_plugin_config(&mut t, &ds, c, prefix);
+            }
+            t
+        }
     };
     let js = generate_js(
         &table,
@@ -100,6 +125,9 @@ fn main() -> ExitCode {
         &GenerateOptions {
             prefix,
             patterns: args.patterns,
+            plugin: cfg.as_ref(),
+            extend: args.extend,
+            ds: Some(&ds),
         },
     );
     match &args.out {
@@ -109,7 +137,7 @@ fn main() -> ExitCode {
                 std::process::exit(1);
             });
             eprintln!(
-                "twm-gen: {} files scanned, {} unique candidates, wrote {} ({} bytes{})",
+                "twm-gen: {} files scanned, {} unique candidates, wrote {} ({} bytes{}{})",
                 files.len(),
                 all_classes.len(),
                 out,
@@ -118,12 +146,24 @@ fn main() -> ExitCode {
                     ", patterns"
                 } else {
                     ", exact"
-                }
+                },
+                if args.extend { ", extend" } else { "" }
             );
         }
         None => print!("{js}"),
     }
     ExitCode::SUCCESS
+}
+
+fn load_config(path: &str) -> PluginConfig {
+    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        eprintln!("twm-gen: cannot read --config file {path}: {e}");
+        std::process::exit(1);
+    });
+    parse_config_json(&content).unwrap_or_else(|e| {
+        eprintln!("twm-gen: invalid --config file {path}: {e}");
+        std::process::exit(1);
+    })
 }
 
 fn parse_args() -> Option<Args> {
@@ -134,6 +174,8 @@ fn parse_args() -> Option<Args> {
     // Full pattern-table resolution is the default (unseen classes still
     // merge correctly); --no-patterns opts out for a smaller bundle.
     let mut patterns = true;
+    let mut config = None;
+    let mut extend = false;
     let mut paths = Vec::new();
     let mut it = std::env::args().skip(1).peekable();
     while let Some(arg) = it.next() {
@@ -142,6 +184,8 @@ fn parse_args() -> Option<Args> {
             "--css" => css = Some(it.next()?),
             "--out" => out = Some(it.next()?),
             "--prefix" => prefix = Some(it.next()?),
+            "--config" => config = Some(it.next()?),
+            "--extend" => extend = true,
             "--check" => check = true,
             "--patterns" => patterns = true,
             "--no-patterns" => patterns = false,
@@ -158,11 +202,13 @@ fn parse_args() -> Option<Args> {
         prefix,
         check,
         patterns,
+        config,
+        extend,
         paths,
     })
 }
 
-fn build_design_system(extra: Option<&str>) -> DesignSystem {
+fn build_design_system(extra: Option<&str>, plugin: &[(String, Vec<(String, String)>)]) -> DesignSystem {
     match extra {
         Some(path) => {
             let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
@@ -177,9 +223,10 @@ fn build_design_system(extra: Option<&str>) -> DesignSystem {
                 twm_core::DEFAULT_THEME_CSS,
                 twm_core::DEFAULT_UTILITIES_CSS,
                 &all,
+                plugin,
             )
         }
-        None => default_design_system(),
+        None => default_design_system_with_plugin(plugin),
     }
 }
 
@@ -272,13 +319,18 @@ fn collect_paths(pattern: &str, out: &mut Vec<String>) {
 fn run_check(
     ds: &DesignSystem,
     prefix: Option<&str>,
+    cfg: Option<&PluginConfig>,
     hits: &[(String, String, usize)],
 ) -> ExitCode {
     // Process right-to-left like tw_merge, tracking which classes would be
     // dropped and where they appear.
     let classes: Vec<&str> = hits.iter().map(|(c, _, _)| c.as_str()).collect();
     let union: Vec<String> = hits.iter().map(|(c, _, _)| c.clone()).collect();
-    let table = ConflictTable::from_classes(ds, &union, prefix);
+    let mut table = ConflictTable::from_classes(ds, &union, prefix);
+    // Plugin edges participate in the check like in the emitted bundle.
+    if let Some(c) = cfg {
+        let _ = apply_plugin_config(&mut table, ds, c, prefix);
+    }
 
     let mut seen: HashSet<String> = HashSet::new();
     let mut drops: Vec<String> = Vec::new();

@@ -104,7 +104,8 @@ impl Trie {
             };
             node = next;
             // A wildcard ends here only when the candidate has a non-empty
-            // suffix (current code skips `value.is_empty()`).
+            // suffix; an empty suffix is decided by the final-node checks
+            // below.
             if i + 1 < name.len() {
                 if let Some(u) = self.nodes[node].wildcard_util {
                     wildcard = Some((u, i + 1));
@@ -114,6 +115,18 @@ impl Trie {
         if complete {
             if let Some(u) = self.nodes[node].static_util {
                 return Some((&ordered[u], None));
+            }
+            // Empty-suffix wildcard: candidate ends exactly at a wildcard
+            // prefix (e.g. plugin `border-s-*` with a `''` spec), possibly
+            // without its trailing dash (`border-s`). The value spec decides
+            // whether the empty suffix matches.
+            if let Some(u) = self.nodes[node].wildcard_util {
+                return Some((&ordered[u], Some(name.len())));
+            }
+            if let Some(next) = self.nodes[node].children.get(&b'-') {
+                if let Some(u) = self.nodes[*next].wildcard_util {
+                    return Some((&ordered[u], Some(name.len())));
+                }
             }
         }
         if let Some((u, depth)) = wildcard {
@@ -161,9 +174,18 @@ pub struct Resolved {
 }
 
 impl DesignSystem {
-    pub fn from_css(theme: Theme, utilities: Vec<(String, Vec<(String, String)>)>) -> Self {
+    /// Build a design system from parsed CSS plus synthetic plugin utilities
+    /// (see `crate::config::PluginConfig::to_synthetic_utilities`). Plugin
+    /// utilities merge into existing entries: a plugin utility named like a
+    /// builtin appends its alternative AFTER the builtin ones, so builtin
+    /// alternatives are tried first.
+    pub fn from_css(
+        theme: Theme,
+        utilities: Vec<(String, Vec<(String, String)>)>,
+        plugin: &[(String, Vec<(String, String)>)],
+    ) -> Self {
         let mut map: HashMap<String, Vec<Alternative>> = HashMap::new();
-        for (name, decls) in utilities {
+        for (name, decls) in utilities.into_iter().chain(plugin.iter().cloned()) {
             let alts = map.entry(name.clone()).or_default();
             if decls.is_empty() {
                 continue;
@@ -257,6 +279,18 @@ impl DesignSystem {
 /// families, honoring `utility_override` filters. Computed once per
 /// alternative at catalog build.
 fn resolve_alternative(utility: &str, props: &[(String, Option<ValueSpec>)]) -> Resolved {
+    // Synthetic plugin utilities: the reserved `--twmo-family:` prop names
+    // the family directly (bypassing CSS-derived derivation and the
+    // `utility_override` table).
+    if let Some(family) = props
+        .iter()
+        .find_map(|(p, _)| p.strip_prefix("--twmo-family:"))
+    {
+        return Resolved {
+            family: family.to_string(),
+            prop_families: vec![family.to_string()],
+        };
+    }
     let prop_families: Vec<String> = props
         .iter()
         .map(|(prop, _)| prop_family(prop, utility).to_string())
@@ -300,7 +334,16 @@ impl Alternative {
                 None => {}
                 Some(ValueSpec::Items(items)) => {
                     has_spec = true;
-                    if !items.iter().any(|item| item.matches(ds, value)) {
+                    // An empty suffix only matches via an explicit `''`
+                    // keyword spec; `<any>`-style specs must not accept
+                    // bare prefixes.
+                    if value.is_empty() {
+                        if !items.iter().any(|item| {
+                            matches!(item, SpecItem::Keyword(k) if k.is_empty())
+                        }) {
+                            return false;
+                        }
+                    } else if !items.iter().any(|item| item.matches(ds, value)) {
                         return false;
                     }
                 }
@@ -446,6 +489,9 @@ pub fn parse_marker(inner: &str) -> Vec<SpecItem> {
 
 fn push_item(items: &mut Vec<SpecItem>, raw: &str) {
     if raw.is_empty() {
+        // The empty keyword spec: allows an empty value suffix (plugin
+        // wildcards like `border-s-*` with a `''` spec).
+        items.push(SpecItem::Keyword(String::new()));
         return;
     }
     // Only angle-bracketed markers are types; bare words are always literal
@@ -553,7 +599,7 @@ mod tests {
             @utility block { display: block; }
         "#;
         let prog = crate::css::parse(css);
-        DesignSystem::from_css(Theme::from_program(&prog), prog.utilities)
+        DesignSystem::from_css(Theme::from_program(&prog), prog.utilities, &[])
     }
 
     #[test]

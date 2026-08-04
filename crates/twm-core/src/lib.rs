@@ -3,6 +3,7 @@
 //! dependency-free JS `twMerge`/`twJoin` bundles at build time.
 
 pub mod candidate;
+pub mod config;
 pub mod conflict;
 pub mod css;
 pub mod families;
@@ -35,19 +36,34 @@ pub const TEST_EXTENSION_CSS: &str = include_str!("../assets/test-extension.css"
 
 /// Load the default design system (vendored theme + catalog + extension).
 pub fn default_design_system() -> DesignSystem {
-    design_system_with_css(DEFAULT_THEME_CSS, DEFAULT_UTILITIES_CSS, TEST_EXTENSION_CSS)
+    design_system_with_css(DEFAULT_THEME_CSS, DEFAULT_UTILITIES_CSS, TEST_EXTENSION_CSS, &[])
+}
+
+/// Default design system with synthetic plugin utilities appended (builtin
+/// alternatives are tried first — see `PluginConfig::to_synthetic_utilities`).
+pub fn default_design_system_with_plugin(
+    plugin: &[(String, Vec<(String, String)>)],
+) -> DesignSystem {
+    design_system_with_css(
+        DEFAULT_THEME_CSS,
+        DEFAULT_UTILITIES_CSS,
+        TEST_EXTENSION_CSS,
+        plugin,
+    )
 }
 
 /// Build a design system from explicit CSS sources. `utilities_css` entries
-/// are parsed in order; later sources add resolution alternatives.
+/// are parsed in order; later sources add resolution alternatives. `plugin`
+/// appends synthetic plugin utilities (builtin alternatives win).
 pub fn design_system_with_css(
     theme_css: &str,
     utilities_css: &str,
     extra_css: &str,
+    plugin: &[(String, Vec<(String, String)>)],
 ) -> DesignSystem {
     let theme_prog = css::parse(theme_css);
     let mut utilities = Vec::new();
     utilities.extend(css::parse(utilities_css).utilities);
     utilities.extend(css::parse(extra_css).utilities);
-    DesignSystem::from_css(Theme::from_program(&theme_prog), utilities)
+    DesignSystem::from_css(Theme::from_program(&theme_prog), utilities, plugin)
 }

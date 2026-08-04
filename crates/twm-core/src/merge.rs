@@ -122,7 +122,7 @@ mod tests {
             @utility leading-* { line-height: --value(--leading-*, <length>, <number>, <percentage>, none); }
         "#;
         let prog = crate::css::parse(css);
-        DesignSystem::from_css(Theme::from_program(&prog), prog.utilities)
+        DesignSystem::from_css(Theme::from_program(&prog), prog.utilities, &[])
     }
 
     fn table(classes: &[&str]) -> ConflictTable {

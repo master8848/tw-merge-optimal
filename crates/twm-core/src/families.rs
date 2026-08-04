@@ -72,6 +72,11 @@ pub fn utility_override(utility: &str) -> Option<(&'static str, Option<&'static 
 /// Maps a generated CSS property to a conflict family, with utility-name
 /// context for overrides (shadow vs ring, filter kinds, transforms, ...).
 pub fn prop_family(prop: &str, utility: &str) -> Cow<'static, str> {
+    // Reserved family prop of synthetic plugin utilities: the configured
+    // group name is the family directly.
+    if let Some(fam) = prop.strip_prefix("--twmo-family:") {
+        return Cow::Owned(fam.to_string());
+    }
     match prop {
         // ---- shadow / ring: same CSS property, different families ----
         "box-shadow" if utility.starts_with("ring") || utility == "ring" => "ring".into(),

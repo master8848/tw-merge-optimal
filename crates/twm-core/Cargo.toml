@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 tailwindcss-oxide = { path = "../../../tailwindcss/crates/oxide" }
 regex = "1.11"
+serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3.13"
-serde_json = "1"

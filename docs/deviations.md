@@ -12,14 +12,52 @@
   Benchmarks therefore compare the variadic `twMergeJoin` against
   tailwind-merge's variadic `twMerge` (a like-for-like comparison); the
   string-only `twMerge` is measured in separate rows.
-- **Config API not implemented.** The tailwind-merge config-API test files
-  (create/extend-tailwind-merge, merge-configs, theme, experimental-parse-class-name,
-  default-config, class-map, lazy-initialization, type-generics, public-api) are
-  intentionally not ported; prefix support is exposed as a `tw_merge(..., Some("tw"))`
-  argument instead of `extendTailwindMerge`. Custom design-system extensions go through
-  `--css` (`@utility`/`@theme` syntax) instead — the same place you must declare them
-  for Tailwind itself to generate them, so no separate merge config is needed. Two
-  `#[ignore]`d placeholder tests (`known_deviation_*`) document this.
+- **Plugin configs exist, but always EXTEND — there is no `override`.**
+  The tailwind-merge config API is implemented (`--config` at build time,
+  `tw-merge-optimal/extend` at runtime), but a top-level `classGroups` is
+  always *merged on top of* the compiled catalog: the compiled tables cannot
+  be replaced, so builtin classes always win for class names the builtin
+  grammar accepts. Consequences, all verified side-by-side against
+  tailwind-merge v3.6.0 running the same rtl-style config:
+  - **Builtin-first shadowing.** `ps-[1rem]`, `ps-2` (compiled spacing
+    scale), `start-auto` and the bare `border-s` (compiled static) all stay
+    in their compiled families; the plugin families only see classes the
+    builtin grammar rejects — `ps-2px`, `border-s-2px` (builtin border
+    widths are plain numbers), `start-2px`, `divide-s-2px`. Because
+    tailwind-merge's hand-maintained default config has no `start`/`end`
+    groups, the real plugin merges `start-auto start-2px` into
+    `start-2px`; here `start-auto` is compiled and both classes are kept.
+    Conversely the plugin's `rtl.rounded-*` groups are unreachable at
+    runtime: the compiled `rounded-s-*` grammar already covers every value
+    the group lists, so `rounded-s-2xl` stays compiled (`rounded-s-2xl
+    rounded-md` keeps both, where the plugin would merge to `rounded-md`).
+  - **More merging than the plugin on tailwind-merge in some pairs.** Our
+    `border-w` edge reaches the *overlay* `rtl.border-w-s` family, so
+    `border-s-2px border-2` → `border-2`; tailwind-merge resolves
+    `border-s-2px` into its own default `border-w-s` group instead, which
+    the plugin edge doesn't touch — both kept there.
+  - **Less merging in others.** `border-s-red border-s-2px` keeps both here
+    (two separate overlay families, `rtl.border-color-s` vs
+    `rtl.border-w-s`); tailwind-merge's default config collapses them.
+  - Directionality is exactly tailwind-merge's: right-to-left, the **last
+    class wins**, and an edge A → [B] means a *later* A-class removes
+    *preceding* B-classes (`ps-2px p-4` → `p-4`, `p-4 ps-2px` → both kept;
+    `space-x-2 space-s-2px` → `space-s-2px`, reversed → `space-x-2`).
+  - The runtime `<length>` type requires **units** (`ps-2px` matches,
+    `ps-2` does not — tailwind-merge's own `isLength`/`isLengthOnly`
+    behavior); plugin classes are matched after the builtin paths, so
+    builtin-rejected classes fall through to them.
+  - Build-time `--config` supports `--theme-key*` specs; the runtime
+    `/extend` API throws on them. Unknown top-level config keys throw at
+    runtime too (same policy as build time). Runtime `extend`-wrapped config
+    objects are unwrapped, exactly like build-time configs.
+  - Postfix/leading specials (`text-lg/7` → `leading-*`,
+    `@container/[name]`) do not apply to plugin families: the overlay
+    matcher has no postfix handling, and builtin-first shadowing resolves
+    those classes compiled anyway.
+  - Prefix support remains a build-time `--prefix <p>` argument; a runtime
+    `prefix` key throws (like any unknown top-level key, and `--config`
+    rejects it too).
 - **Arbitrary properties merge with the standard classes they write.**
   `[padding:1rem]` maps to the `p` family, `[color:blue]` to `color`,
   `[background-color:red]` to `bg-color`, so they conflict with `p-4`,

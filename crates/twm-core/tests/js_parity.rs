@@ -36,6 +36,7 @@ fn js_parity_and_bundle_sizes() {
         &GenerateOptions {
             prefix: None,
             patterns: false,
+            ..Default::default()
         },
     );
 
@@ -50,6 +51,7 @@ fn js_parity_and_bundle_sizes() {
         &GenerateOptions {
             prefix: None,
             patterns: true,
+            ..Default::default()
         },
     );
 
@@ -85,6 +87,7 @@ fn js_parity_and_bundle_sizes() {
         &GenerateOptions {
             prefix: None,
             patterns: false,
+            ..Default::default()
         },
     );
     let small_bytes = small_js.len();
@@ -126,6 +129,7 @@ fn js_parity_and_bundle_sizes() {
         &GenerateOptions {
             prefix: Some("tw"),
             patterns: true,
+            ..Default::default()
         },
     );
     println!("prefixed bundle size: {} bytes", prefix_js.len());

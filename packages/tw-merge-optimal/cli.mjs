@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +16,8 @@ USAGE
 
 OPTIONS
   --css <file>     extra @utility/@theme CSS to extend the design system
+  --config <file>  JSON config (classGroups / conflictingClassGroups) to extend
+                   the design system
   --out <file>     write the generated JS bundle to <file> (default: stdout)
   --prefix <p>     only treat classes with the \`p:\` prefix as Tailwind classes
   --no-patterns    emit only the scanned classes (smaller bundle; classes the
@@ -128,6 +130,7 @@ export function generate(options = {}) {
     const {
         sources = [],
         css,
+        config,
         out,
         prefix,
         patterns,
@@ -147,28 +150,45 @@ export function generate(options = {}) {
 
     if (out) mkdirSync(dirname(out), { recursive: true });
 
-    const result = engine ? runWith(engine, args) : runEngine(args);
-    const stderr = result.stderr ?? '';
-    const status = result.status ?? -1;
+    let configFile = null;
+    try {
+        if (config) {
+            const dir = join(process.cwd(), '.tw-merge-optimal');
+            mkdirSync(dir, { recursive: true });
+            configFile = join(dir, `config-${process.pid}.json`);
+            writeFileSync(configFile, JSON.stringify(config));
+            args.push('--config', configFile);
+        }
 
-    if (status !== 0) {
-        throw new Error(
-            `tw-merge-optimal: twm-gen failed (exit ${status})\n${stderr.trim()}`
-        );
+        const result = engine ? runWith(engine, args) : runEngine(args);
+        const stderr = result.stderr ?? '';
+        const status = result.status ?? -1;
+
+        if (status !== 0) {
+            throw new Error(
+                `tw-merge-optimal: twm-gen failed (exit ${status})\n${stderr.trim()}`
+            );
+        }
+
+        let bytes = null;
+        if (out) {
+            const m = stderr.match(/wrote \S+ \((\d+) bytes/);
+            bytes = m ? Number(m[1]) : 0;
+        }
+
+        return {
+            bundle: out ? null : (result.stdout ?? ''),
+            bytes,
+            stderr,
+            status,
+        };
+    } finally {
+        if (configFile) {
+            try {
+                unlinkSync(configFile);
+            } catch {}
+        }
     }
-
-    let bytes = null;
-    if (out) {
-        const m = stderr.match(/wrote \S+ \((\d+) bytes/);
-        bytes = m ? Number(m[1]) : 0;
-    }
-
-    return {
-        bundle: out ? null : (result.stdout ?? ''),
-        bytes,
-        stderr,
-        status,
-    };
 }
 
 export function runCli(argv = process.argv.slice(2)) {

@@ -11,6 +11,9 @@
 //!   The third element flags the documented-deviation corpus group
 //!   (arbitrary properties merge with the standard classes they write),
 //!   where tailwind-merge legitimately disagrees with the expected output.
+//! - `packages/tw-merge-optimal/extend.mjs` — the prebuilt runtime-extend
+//!   bundle (same corpus/inputs as `tw-merge-optimal.mjs`, plus the overlay
+//!   machinery and the runtime extend API).
 //!
 //! Usage: `cargo run -p twm-core --bin bench_gen`
 
@@ -100,6 +103,7 @@ fn main() {
         &GenerateOptions {
             prefix: None,
             patterns: true,
+            ..Default::default()
         },
     );
     let bundle = out_dir.join("tw-merge-optimal.mjs");
@@ -115,6 +119,7 @@ fn main() {
         &GenerateOptions {
             prefix: None,
             patterns: false,
+            ..Default::default()
         },
     );
     let exact_bundle = out_dir.join("tw-merge-optimal-exact.mjs");
@@ -123,6 +128,28 @@ fn main() {
         "bench_gen: wrote {} ({} bytes)",
         exact_bundle.display(),
         exact.len()
+    );
+
+    // Extend bundle: the prebuilt runtime-extend entry (package
+    // `./extend` export). Same patterns-mode corpus/inputs as the full
+    // bundle, plus the overlay machinery (empty module overlay — build-time
+    // configs are always compiled) and the runtime extend API.
+    let extend = generate_js(
+        &table,
+        Some(&patterns),
+        &GenerateOptions {
+            prefix: None,
+            patterns: true,
+            extend: true,
+            ..Default::default()
+        },
+    );
+    let extend_bundle = root.join("packages/tw-merge-optimal/extend.mjs");
+    std::fs::write(&extend_bundle, &extend).expect("write extend bundle");
+    eprintln!(
+        "bench_gen: wrote {} ({} bytes)",
+        extend_bundle.display(),
+        extend.len()
     );
 
     // 4. Corpus cases JSON for the Node-side parity re-check. Cases from the

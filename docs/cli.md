@@ -3,12 +3,17 @@
 ```
 twm-gen v0.1 — build-time Tailwind class-merge generator
 
-usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--no-patterns] [--check] <globs-or-paths...>
+usage: twm-gen [--css <file>] [--config <file>] [--out <file>] [--prefix <p>] [--extend]
+               [--no-patterns] [--check] <globs-or-paths...>
 
 options:
   --css <file>    extra @utility/@theme CSS to extend the design system
+  --config <file> tailwind-merge-style plugin config JSON (classGroups /
+                  conflictingClassGroups) merged into the design system
   --out <file>    write the generated JS bundle to <file> (default: stdout)
   --prefix <p>    only treat classes with the `p:` prefix as Tailwind classes
+  --extend        emit the runtime extend API (extendTailwindMerge, validators,
+                  ...) plus the overlay machinery for runtime configs
   --no-patterns   emit only the scanned classes (smaller bundle; classes the
                   scanner missed pass through unmerged — default is full
                   pattern-table resolution, so unseen classes still merge)
@@ -71,6 +76,90 @@ Extend the design system with your own utilities (`--css`, same `@utility` synta
 ```sh
 $ twm-gen --css site.css --out tw-merge.mjs src/
 ```
+
+## Plugin configs (`--config <file>`)
+
+`--config` accepts a tailwind-merge-style plugin config JSON with the same
+shape tailwind-merge plugins use (e.g. `tailwind-merge-rtl-plugin`): top-level
+`classGroups` and `conflictingClassGroups`, optionally wrapped in `extend`.
+Any other top-level key is rejected.
+
+```json
+{
+    "classGroups": {
+        "rtl.ps": [{ "ps": ["<length>"] }],
+        "rtl.border-w-s": [{ "border-s": ["", "<length>"] }],
+        "rtl.static": ["rtl-start"]
+    },
+    "conflictingClassGroups": {
+        "p": ["rtl.ps"],
+        "border-w": ["rtl.border-w-s"]
+    }
+}
+```
+
+Each `classGroups` value is a list of group items:
+
+- A plain string is a **static class** (`"rtl-start"`).
+- An object `{ "prefix": [spec, ...] }` is a **wildcard group item**: the
+  synthetic utility `prefix-*` matches any class whose suffix validates
+  against any of the specs:
+  - `<type>` — value-type name, validated at build time against the engine's
+    `TYPES` list (`<length>`, `<number>`, `<tshirt>`, `<spacing>`,
+    `<a-length>`, ...). `<color>` is normalized to `any` (the catalog's color
+    scale check). Unknown types are an error (`unknown spec type: <bogus>`).
+  - `--theme-key` / `--theme-key-*` — theme keys, resolved at build time from
+    the design system's theme variables (star = any suffix). Only the
+    build-time path supports them; the runtime `/extend` API throws on them.
+  - any other string — a **literal keyword** suffix (`"auto"`, `"full"`, ...).
+  - `""` — the **empty suffix**: the bare class (`border-s`) matches.
+
+`conflictingClassGroups` entries are directional, exactly like tailwind-merge:
+`"p": ["rtl.ps"]` means a *later* `p-*` class removes *preceding* `rtl.ps`
+classes. Declare both directions for symmetric conflicts.
+
+A top-level `classGroups` is treated as **extend** — appended to the compiled
+catalog (the compiled tables cannot be replaced), so plugin classes can never
+shadow builtins; builtin classes always win for class names the builtin
+grammar accepts (see [deviations.md](deviations.md)).
+
+Example — the config above generates:
+
+```sh
+$ twm-gen --config rtl.json --out tw-merge.mjs src/
+```
+
+and the emitted bundle merges
+
+```
+twMerge('ps-2px p-4')        → 'p-4'              (later p-4 drops ps-2px)
+twMerge('p-4 ps-2px')        → 'p-4 ps-2px'       (no reverse edge)
+twMerge('ps-2px ps-3px')     → 'ps-3px'           (same rtl.ps family)
+twMerge('border-s border-2') → 'border-2'         (later border-2 via border-w)
+twMerge('border-2 border-s') → 'border-2 border-s'
+```
+
+Directionality is tailwind-merge's: processing is right-to-left, the last
+class wins, and an edge A → [B] means a *later* A-class removes *preceding*
+B-classes (declare both directions for symmetric conflicts).
+
+Note on class resolution: builtin classes always win. `border-s` (a compiled
+v4 static) stays in the compiled `border-w-s` family and never joins the
+plugin's `rtl.border-w-s` family, and `border-s-2px` resolves whichever
+family the scanner assigned when the class is present in your sources (the
+catalog's `<color>` alternative matches any suffix in the Rust resolver) —
+only classes the builtin grammar rejects are guaranteed to land in the plugin
+family. `ps-2px` is one such class: the builtin `ps-*` spacing scale rejects
+unit-ful values, so it resolves `rtl.ps`.
+
+## Runtime configs (`--extend`)
+
+`--extend` additionally emits the runtime extend API — `extendTailwindMerge`,
+`createTailwindMerge`, `mergeConfigs` and the tagged `validators` — plus the
+overlay machinery, so configs can also be passed at runtime (see
+[runtime.md](runtime.md#the-runtime-config-api-extend)). The bundle then pays
+the overlay machinery on top of the plain patterns bundle (~5 KB raw; see
+[size.md](size.md)). `--config` and `--extend` can be combined.
 
 ## Modes
 

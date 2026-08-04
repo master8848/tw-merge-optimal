@@ -22,6 +22,10 @@
         "./turbopack": "./turbopack.mjs",
         "./babel": "./babel.mjs",
         "./cli": "./cli.mjs",
+        "./extend": {
+            "types": "./extend.d.ts",
+            "default": "./extend.mjs"
+        },
         "./generated.mjs": "./generated.mjs"
     },
     "files": [
@@ -29,6 +33,8 @@
         "index.d.ts",
         "full.mjs",
         "cli.mjs",
+        "extend.d.ts",
+        "extend.mjs",
         "install.mjs",
         "build-wasm.mjs",
         "wasi-runner.mjs",

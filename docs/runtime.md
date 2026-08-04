@@ -231,3 +231,96 @@ Both modes produce **byte-identical output** on every class the exact mode
 resolved; `tests/js_parity.rs` verifies both bundles against the full
 349-case corpus, and `bench/verify.mjs` re-checks all cases with a rotated
 loop (guarding against V8 constant-folding).
+
+## The runtime config API (`/extend`)
+
+The `tw-merge-optimal/extend` sub-import ships the patterns bundle plus the
+**overlay machinery** (`m2`, `makeBundle`) and the runtime config API, so
+plugin configs can be supplied at runtime instead of build time:
+
+```js
+import {
+    twMerge,          // variadic, like tailwind-merge's twMerge
+    twMergeJoin,      // alias of twMerge
+    twJoin,
+    setCacheSize,
+    extendTailwindMerge,
+    createTailwindMerge,   // alias of extendTailwindMerge
+    mergeConfigs,
+    validators,       // 57 type-checker fns, each tagged `.t`
+} from 'tw-merge-optimal/extend'
+```
+
+`extendTailwindMerge(config)` returns a fresh `twMerge` bound to the given
+config. The config shape is tailwind-merge's: top-level `classGroups` and
+`conflictingClassGroups`, optionally wrapped in `extend` (top-level and
+`extend`-wrapped groups both apply, with the same append semantics as
+`mergeConfigs`; there is no `override` — class groups always extend the
+compiled catalog, see [deviations.md](deviations.md)). It also accepts a
+function `(prevConfig) => config`, which receives
+`{ classGroups: {}, conflictingClassGroups: {} }`.
+
+```js
+const twMerge = extendTailwindMerge({
+    classGroups: {
+        'rtl.ps': [{ ps: [validators.isLength] }],
+        'rtl.border-w-s': [{ 'border-s': ['', '<length>'] }],
+    },
+    conflictingClassGroups: {
+        p: ['rtl.ps'],
+        'border-w': ['rtl.border-w-s'],
+    },
+})
+
+twMerge('ps-2px p-4')        // → 'p-4'
+twMerge('p-4 ps-2px')        // → 'p-4 ps-2px'
+```
+
+### Config values
+
+Each `classGroups` entry is a list of items; a string item is a static class,
+an object `{ prefix: [spec, ...] }` a wildcard group item:
+
+- `<type>` — resolved via `TYPEMAP` against the engine's `TYPES`; an unknown
+  type throws (`unknown type: <bogus>`).
+- a **validator function** from the `validators` export — the `.t` tag is the
+  type code (`TYPES` index + 1) and is the only thing that participates in
+  matching: the function body is a placeholder that always returns `true`.
+  `validators.isLength` (`.t === 7`) and the string `'<length>'` behave
+  identically.
+- any other string — a literal keyword suffix (`'auto'`, `'full'`); `''` is
+  the empty suffix (the bare class).
+- `'--foo'` theme-key strings **throw** at runtime (`runtime theme keys are
+  not supported`) — theme keys are a build-time feature
+  ([cli.md](cli.md#plugin-configs---config-file)).
+
+Unknown top-level config keys throw (`unsupported config key: <name>`), the
+same policy as the build-time `--config` path.
+
+### Conflict semantics
+
+Exactly tailwind-merge's: processing is right-to-left, the last class wins,
+and `conflictingClassGroups` A → [B, ...] means a *later* A-class removes
+*preceding* B-classes. Overlay families can both kill and be killed:
+compiled→overlay edges are stored in the module `OW` table, overlay→compiled
+and overlay→overlay edges in the per-instance `XC` rows; unknown edge
+targets are dead edges (no error).
+
+### Caches and instances
+
+- The default export and every configured instance carry their own whole-call
+  result cache (`RC`, inside `makeBundle`); the shared per-class parse cache
+  (`PC`) is config-independent. `setCacheSize(n)` bounds both (`0` disables
+  them); it clears the shared `PC` and each instance respects the bound at
+  access.
+- Results that involved an overlay match are **not** result-cached (overlay
+  family ids are instance-specific), so repeated calls on configured
+  instances still hit the `RC` only for compiled-only results.
+- Instances are isolated: two `extendTailwindMerge` instances never poison
+  each other's caches, and the default export is unaffected by configured
+  instances.
+
+`mergeConfigs(a, b)` appends two configs (class group items concatenate,
+conflicting targets union; top-level and `extend`-wrapped group lists merge
+identically) and returns a fresh object without mutating its inputs — the
+shape plugins use to build configs from a base.
