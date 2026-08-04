@@ -27,9 +27,11 @@ semantic versioning on the `twm-gen` binary / `tw-merge-optimal` package.
 - **Family-guarded pattern tables** — the bundler path ships only the
   utilities whose families the scanned classes use.
 - **Benchmark results recorded** in `bench/RESULTS.md` and
-  `docs/performance.md` (2026-08-04 runs): ~12× wins on cold/dynamic
-  inputs; warm-cache rows within ~1–2% of tailwind-merge, corpus 1.43× in
-  optimal's favor.
+  `docs/performance.md` (2026-08-04 runs): ~12.5× wins on cold/dynamic
+  inputs (always-on cache vs LRU-500 off); warm-cache rows within ~1% of
+  tailwind-merge, corpus 1.34× in optimal's favor; with *both* caches off
+  tailwind-merge leads 1.33–1.53× (the matcher-only cold path, honestly
+  documented).
 
 ### Fixed
 

@@ -12,7 +12,7 @@ import { gzipSync } from 'node:zlib'
 // actually use) is benchmarked separately in the "string-only" rows; it is
 // strictly faster than the variadic entry because it skips all rest-arg
 // handling.
-import { twMerge as twMergeOptimal, twMergeJoin as twMergeOptimalJoin } from './generated/tw-merge-optimal.mjs'
+import { twMerge as twMergeOptimal, twMergeJoin as twMergeOptimalJoin, setCacheSize as setCacheSizeOptimal } from './generated/tw-merge-optimal.mjs'
 
 // tailwind-merge: reference implementation (point TAILWIND_MERGE_PATH at a
 // different checkout if needed).
@@ -109,10 +109,21 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
             twMergeTailwindNoCache(...(testDataCollection[index] as TestDataItem))
         }
     })
+    // tw-merge-optimal's cache is always-on by default; these rows disable it
+    // with setCacheSize(0) so the worst case is measured on both sides (the
+    // cache is restored to the default 8192 in teardown).
+    benchWithMemory('collection tw-merge-optimal (cache off)', () => {
+        for (let index = 0; index < testDataCollection.length; ++index) {
+            twMergeOptimalJoin(...(testDataCollection[index] as TestDataItem))
+        }
+    }, { cacheSize: 0 })
 
     benchWithMemory('ultra long list tailwind-merge (cache off)', () => {
         twMergeTailwindNoCache(...ultraLongClassList)
     })
+    benchWithMemory('ultra long list tw-merge-optimal (cache off)', () => {
+        twMergeOptimalJoin(...ultraLongClassList)
+    }, { cacheSize: 0 })
     benchWithMemory('ultra long list tw-merge-optimal (twMergeJoin)', () => {
         twMergeOptimalJoin(...ultraLongClassList)
     })
@@ -185,7 +196,7 @@ afterAll(() => {
 function benchWithMemory(
     name: string,
     fn: () => void,
-    options?: { iterations?: number; time?: number },
+    options?: { iterations?: number; time?: number; cacheSize?: number },
 ) {
     let iterationBefore: MemoryStats | null = null
     let peakMemoryDelta = 0
@@ -217,6 +228,10 @@ function benchWithMemory(
                 await forceGarbageCollection()
                 await forceGarbageCollection()
 
+                if (options?.cacheSize !== undefined) {
+                    setCacheSizeOptimal(options.cacheSize)
+                }
+
                 const currentMemory = getMemoryUsage()
                 if (!memoryData.has(name)) {
                     iterationBefore = currentMemory
@@ -226,7 +241,12 @@ function benchWithMemory(
                     })
                 }
             },
-            teardown: forceGarbageCollection,
+            teardown: async () => {
+                if (options?.cacheSize !== undefined) {
+                    setCacheSizeOptimal(8192)
+                }
+                await forceGarbageCollection()
+            },
         },
     )
 }

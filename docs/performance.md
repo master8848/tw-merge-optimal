@@ -36,14 +36,16 @@ Latest run: 2026-08-04, Node v24.13.0, Apple Silicon (macOS 26.5.2).
 
 | Workload | tailwind-merge | tw-merge-optimal | ratio |
 |---|---|---|---|
-| simple (2 classes, both caches warm) | 538,229 | 531,183 | tailwind-merge 1.01× |
-| simple string-only (warm) | 591,924 | 580,172 | tailwind-merge 1.02× |
-| heavy (real-world 10-arg call, warm) | 385,158 | 377,451 | tailwind-merge 1.02× |
-| corpus (349 cases, warm) | 58,794 | 84,351 | **1.43× (optimal)** |
-| collection ×1,322 (tw cache on) | 1,354 | 1,329 | tailwind-merge 1.02× |
-| collection ×1,322 (tw cache off) | 108 | 1,329 | **12.3× (optimal)** |
-| ultra-long list (2,400 classes, tw cache on) | 18,685 | 18,802 | 1.01× (optimal) |
-| ultra-long list (2,400 classes, tw cache off) | 1,464 | 18,802 | **12.8× (optimal)** |
+| simple (2 classes, both caches warm) | 551,241 | 544,759 | tailwind-merge 1.01× |
+| simple string-only (warm) | 595,763 | 593,461 | tailwind-merge 1.004× |
+| heavy (real-world 10-arg call, warm) | 390,687 | 390,265 | tailwind-merge 1.001× |
+| corpus (349 cases, warm) | 59,590 | 79,815 | **1.34× (optimal)** |
+| collection ×1,322 (cache on) | 1,386 | 1,383 | tailwind-merge 1.002× |
+| collection ×1,322 (tw cache off) | 111 | 1,383 | **12.5× (optimal)** |
+| collection ×1,322 (both caches off) | 111 | 73 | tailwind-merge 1.53× |
+| ultra-long list (2,400 classes, cache on) | 19,031 | 19,149 | 1.01× (optimal) |
+| ultra-long list (2,400 classes, tw cache off) | 1,499 | 19,149 | **12.8× (optimal)** |
+| ultra-long list (2,400 classes, both caches off) | 1,499 | 1,131 | tailwind-merge 1.33× |
 
 `bench/verify.mjs` (rotated loop, guards against V8 constant-folding): corpus pass in
 0.032 ms (tailwind-merge) vs 0.034 ms (tw-merge-optimal) — 10,933K vs 10,253K cases/s,
@@ -56,32 +58,43 @@ i.e. tailwind-merge 1.07× on the fully-warm corpus; 0 parity mismatches.
   null-prototype property read (its LRU does not touch on a main-cache hit);
   tw-merge-optimal's is the same shape — one property read, no touch. The residual
   ~1-2% is join/machinery, consistently in tailwind-merge's favor by a few ns.
-- **Corpus row: tw-merge-optimal leads 1.43×.** This row measures the same warm
+- **Corpus row: tw-merge-optimal leads 1.34×.** This row measures the same warm
   single-string calls as "simple" but across 349 inputs; both result caches absorb
   it after the first pass, so it is the RC-hit path again — and on this row
   tw-merge-optimal's object read beats tailwind-merge's LRU bookkeeping (its
   generation-swap `update` on previous-cache hits plus a `previousCache` miss check
   per call). The earlier Map-based designs measured **1.75× behind** (delete+re-set
-  touch on every hit) and **1.10× behind** (linked-list touch) on this row.
-- **tw-merge-optimal wins ~12× where tailwind-merge's result cache can't help**
-  (cache disabled, or thrashing on long/dynamic inputs): its cache is always-on and
-  holds 8,192 entries; tailwind-merge's is LRU-500 (v3 default) and opt-in-offable.
-  A long-lived app that cycles more distinct class strings than its cache bound
-  keeps its hot set warm (the previous generation still hits), while tailwind-merge
-  recomputes everything below its bound.
+  touch on every hit) and **1.10× behind** (linked-list touch) on this row; the
+  object cache turns it into the 1.34× win.
+- **tw-merge-optimal wins ~12.5–12.8× where tailwind-merge's result cache can't
+  help** (cache disabled, or thrashing on long/dynamic inputs): its cache is
+  always-on and holds 8,192 entries; tailwind-merge's is LRU-500 (v3 default) and
+  opt-in-offable. A long-lived app that cycles more distinct class strings than
+  its cache bound keeps its hot set warm (the previous generation still hits),
+  while tailwind-merge recomputes everything below its bound.
+- **With both caches off, tailwind-merge is 1.33–1.53× faster — the honest price
+  of the matcher-only design.** Per-class cold parse is actually in optimal's
+  favor (0.267 µs vs 0.422 µs on a 1-class merge), but the `BI` matcher scans a
+  whole prefix bucket per class (`bg-*` → ~166 records with `startsWith` +
+  validators), which scales worse than tailwind-merge's direct config-map
+  lookups as classes per string grow (0.83 µs/class vs 0.60 µs/class at 5
+  classes). This is the trade the redesign made deliberately — one runtime
+  shape, no `G` table, unseen classes resolve — and it only shows when the
+  always-on cache can't absorb the input (the rows above).
 - **Ultra-long row: parity (was 1.35× behind).** Both sides re-join the 2,400-class
   string per call; the flatten-before-lookup fix removed the deep-rope hash cost
   that had put this row firmly in tailwind-merge's favor.
 - **One-time init (not per-call):** tailwind-merge pays a lazy init of ~1–8 ms
   (config + parser construction) on the first merge call of each instance (1.11 ms on
   this run). tw-merge-optimal has zero init — the tables are static data at module load.
-- **Heap per workload (lower is better):** simple 141 KB (optimal) vs 1.23 MB
-  (tailwind-merge — its one-time lazy init, not steady-state); heavy 496 KB (optimal)
-  vs 313 KB; collection cache-on 1.37 MB (optimal) vs 1.13 MB; corpus 788 KB (optimal)
-  vs 653 KB; ultra-long 687 KB (optimal) vs 649 KB (tailwind-merge, cache off). The
-  optimal caches hold more entries (8,192 vs 500), so they win ~12× where
-  tailwind-merge's LRU-500 thrashes and stay within ~0.1 MB elsewhere; steady-state
-  allocation is zero (the generation swap reuses both objects).
+- **Heap per workload (lower is better):** simple 217 KB (optimal) vs 1.44 MB
+  (tailwind-merge — its one-time lazy init, not steady-state); heavy 219 KB
+  (optimal) vs 259 KB; collection cache-on 1.37 MB (optimal) vs 1.12 MB;
+  collection both-cache-off 13.18 MB (optimal) vs 12.18 MB; ultra-long 636 KB
+  (optimal) vs 620 KB; corpus 785 KB (optimal) vs 650 KB. The optimal caches hold
+  more entries (8,192 vs 500), so they win ~12.5× where tailwind-merge's LRU-500
+  thrashes and stay within ~0.2 MB elsewhere; steady-state allocation is zero
+  (the generation swap reuses both objects).
 - **Bundle:** 41.36 KB raw / 12.14 KB gzip (optimal, family-guarded) vs 103.13 KB /
   17.36 KB (tailwind-merge) — −60% raw, −30% gzip on the same run ([size.md](size.md)).
 
