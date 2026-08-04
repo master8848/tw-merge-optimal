@@ -50,7 +50,10 @@ a bundle with **no scan** must carry, and it is what the old prebuilt
 `full.mjs`/`./pattern` bundles embed. The gzip gap vs tailwind-merge
 (12.4 vs 17.4 KB at bench scale) is real and structural: the `BI` index
 span lists and the `FN` name table compress less well than hand-maintained
-config, but the raw difference (−59%) is the honest headline.
+config, but the raw difference (−59%) is the honest headline. At every
+measured scale our gzip is still below tailwind-merge's — how much the
+gzip (shipped) size matters vs the raw (parsed) size is weighed in the
+"Does it matter?" section of [performance.md](performance.md).
 
 ## What's inside
 

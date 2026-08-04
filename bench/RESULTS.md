@@ -16,14 +16,16 @@ tw-merge-optimal's always-on 8,192-entry cache is disabled the same way via
 
 | Workload | tailwind-merge | tw-merge-optimal | ratio |
 |---|---|---|---|
-| simple (2 classes, caches warm) | 551,241 ops/s | 544,759 ops/s | tailwind-merge 1.01× |
-| simple string-only (warm) | 595,763 ops/s | 593,461 ops/s | tailwind-merge 1.004× |
-| heavy (10-arg call, warm) | 390,687 ops/s | 390,265 ops/s | tailwind-merge 1.001× |
+| simple (2 classes, caches warm) | 551,241 ops/s | 544,759 ops/s | parity (±2% run-to-run variance) |
+| simple string-only (warm) | 595,763 ops/s | 593,461 ops/s | parity |
+| heavy (10-arg call, warm) | 390,687 ops/s | 390,265 ops/s | parity |
 | corpus (349 cases, warm) | 59,590 ops/s | 79,815 ops/s | **1.34× optimal** |
-| collection ×1,322 (cache on) | 1,386 ops/s | 1,383 ops/s | tailwind-merge 1.002× |
-| collection ×1,322 (cache off) | 111 ops/s | 73 ops/s | tailwind-merge 1.53× |
-| ultra-long 2,400 classes (cache on) | 19,031 ops/s | 19,149 ops/s | 1.01× optimal |
-| ultra-long 2,400 classes (cache off) | 1,499 ops/s | 1,131 ops/s | tailwind-merge 1.33× |
+| collection ×1,322 (cache on) | 1,386 ops/s | 1,383 ops/s | parity |
+| collection ×1,322 (tw cache off) | 111 ops/s | 1,383 ops/s | **12.5× optimal** |
+| collection ×1,322 (both caches off) | 111 ops/s | 73 ops/s | tailwind-merge 1.53× |
+| ultra-long 2,400 classes (cache on) | 19,031 ops/s | 19,149 ops/s | parity |
+| ultra-long 2,400 classes (tw cache off) | 1,499 ops/s | 19,149 ops/s | **12.8× optimal** |
+| ultra-long 2,400 classes (both caches off) | 1,499 ops/s | 1,131 ops/s | tailwind-merge 1.33× |
 
 ### verify.mjs (rotated-loop corpus, 2000 passes)
 

@@ -28,10 +28,11 @@ semantic versioning on the `twm-gen` binary / `tw-merge-optimal` package.
   utilities whose families the scanned classes use.
 - **Benchmark results recorded** in `bench/RESULTS.md` and
   `docs/performance.md` (2026-08-04 runs): ~12.5× wins on cold/dynamic
-  inputs (always-on cache vs LRU-500 off); warm-cache rows within ~1% of
-  tailwind-merge, corpus 1.34× in optimal's favor; with *both* caches off
-  tailwind-merge leads 1.33–1.53× (the matcher-only cold path, honestly
-  documented).
+  inputs (always-on cache vs LRU-500 off); warm-cache rows are parity
+  within ±2% run-to-run variance, corpus 1.34× in optimal's favor; with
+  *both* caches off tailwind-merge leads 1.33–1.53× (the matcher-only
+  cold path, honestly documented — see the "Does it matter?" verdict in
+  performance.md).
 
 ### Fixed
 

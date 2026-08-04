@@ -36,14 +36,14 @@ Latest run: 2026-08-04, Node v24.13.0, Apple Silicon (macOS 26.5.2).
 
 | Workload | tailwind-merge | tw-merge-optimal | ratio |
 |---|---|---|---|
-| simple (2 classes, both caches warm) | 551,241 | 544,759 | tailwind-merge 1.01× |
-| simple string-only (warm) | 595,763 | 593,461 | tailwind-merge 1.004× |
-| heavy (real-world 10-arg call, warm) | 390,687 | 390,265 | tailwind-merge 1.001× |
+| simple (2 classes, both caches warm) | 551,241 | 544,759 | parity (within ±2% run-to-run variance) |
+| simple string-only (warm) | 595,763 | 593,461 | parity |
+| heavy (real-world 10-arg call, warm) | 390,687 | 390,265 | parity |
 | corpus (349 cases, warm) | 59,590 | 79,815 | **1.34× (optimal)** |
-| collection ×1,322 (cache on) | 1,386 | 1,383 | tailwind-merge 1.002× |
+| collection ×1,322 (cache on) | 1,386 | 1,383 | parity |
 | collection ×1,322 (tw cache off) | 111 | 1,383 | **12.5× (optimal)** |
 | collection ×1,322 (both caches off) | 111 | 73 | tailwind-merge 1.53× |
-| ultra-long list (2,400 classes, cache on) | 19,031 | 19,149 | 1.01× (optimal) |
+| ultra-long list (2,400 classes, cache on) | 19,031 | 19,149 | parity |
 | ultra-long list (2,400 classes, tw cache off) | 1,499 | 19,149 | **12.8× (optimal)** |
 | ultra-long list (2,400 classes, both caches off) | 1,499 | 1,131 | tailwind-merge 1.33× |
 
@@ -53,11 +53,12 @@ i.e. tailwind-merge 1.07× on the fully-warm corpus; 0 parity mismatches.
 
 ## Honest reading
 
-- **Short typical calls (simple/heavy): parity within ~2%.** Both sides are
+- **Short typical calls (simple/heavy/collection): parity.** Both sides are
   dominated by the whole-call result-cache hit. tailwind-merge's hit is a
   null-prototype property read (its LRU does not touch on a main-cache hit);
-  tw-merge-optimal's is the same shape — one property read, no touch. The residual
-  ~1-2% is join/machinery, consistently in tailwind-merge's favor by a few ns.
+  tw-merge-optimal's is the same shape — one property read, no touch. The
+  1.001–1.01× deltas in the table are within **run-to-run variance** (re-runs
+  of the same commit move these rows ±2% on both sides); treat them as tied.
 - **Corpus row: tw-merge-optimal leads 1.34×.** This row measures the same warm
   single-string calls as "simple" but across 349 inputs; both result caches absorb
   it after the first pass, so it is the RC-hit path again — and on this row
@@ -97,6 +98,42 @@ i.e. tailwind-merge 1.07× on the fully-warm corpus; 0 parity mismatches.
   (the generation swap reuses both objects).
 - **Bundle:** 41.36 KB raw / 12.14 KB gzip (optimal, family-guarded) vs 103.13 KB /
   17.36 KB (tailwind-merge) — −60% raw, −30% gzip on the same run ([size.md](size.md)).
+  The raw gap is the honest headline: tailwind-merge's config is repetitive and
+  gzips well, while the `BI`/`FN` tables compress less, so the gzip margin is
+  structurally smaller. At every measured scale our gzip is still below
+  tailwind-merge's (small-sample guarded: ~13.7 KB raw; `twJoin`-only: 3.2 KB
+  gzip), but for a typical app the practical shipped-size saving is the gzip
+  number, not the raw one.
+
+## Does it matter?
+
+Honest verdict, because the rows above are easy to over-read:
+
+- **For the typical call — `cn()` with repeated class strings on every render —
+  the two libraries are equivalent.** Warm rows are parity within ±2% noise;
+  both do one object-property lookup per call. tailwind-merge is the simpler,
+  battle-tested choice and nothing here argues otherwise.
+- **The differences that are real and measurable:**
+  1. **Raw bundle size** — −60% (bench scale) to −87% (small project) before
+     gzip; −30% after gzip. This is the strongest practical argument, for
+     bundle-budget-sensitive projects.
+  2. **Zero one-time init** vs ~1.1 ms lazy config build — matters only for
+     serverless/boot-timing edge cases.
+  3. **Always-on 8,192-entry cache** — ~12.5× where tailwind-merge's LRU-500 is
+     off or thrashing (dynamic, high-cardinality inputs).
+  4. **Corpus warm row 1.34× ahead** — the object-LRU hit path is leaner.
+- **Where tailwind-merge genuinely wins:** with *both* caches off it is
+  1.33–1.53× faster (the matcher-only cold path scans `BI` prefix buckets;
+  see above). Apps that mostly merge **unique, never-repeated** strings (each
+  render a different combination) hit this regime; the always-on cache does
+  not help there. A tailwind-merge variant with an exact-class lookup table
+  (like the old `G`-table design this project removed) plus a leaner cold
+  parse could take the warm rows too — at that point the remaining
+  differentiators are bundle size and init.
+- **Complexity check:** the build-time scan → static-table pipeline is a
+  deliberately heavy architecture for what is, for most users, an easy
+  problem. It pays off only when size/init/cache behavior justify it; for
+  everyone else this page is a good argument to just use tailwind-merge.
 
 ## Parity
 

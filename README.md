@@ -173,9 +173,10 @@ Full guide: [packages/tw-merge-optimal/README.md](packages/tw-merge-optimal/READ
 
 ## Performance at a glance
 
-~12× faster than tailwind-merge on cold/dynamic inputs (always-on 8,192-entry
-result cache vs LRU-500); warm-cache steady state is within ~1–2% of tailwind-merge
-(corpus row 1.43× in optimal's favor); zero init step vs ~1–8 ms lazy build on
+~12.5× faster than tailwind-merge on cold/dynamic inputs (always-on 8,192-entry
+result cache vs LRU-500); warm-cache steady state is parity within ±2% run-to-run
+variance (corpus row 1.34× in optimal's favor; with *both* caches off
+tailwind-merge leads 1.3–1.5×); zero init step vs ~1–8 ms lazy build on
 tailwind-merge's first call. Honest numbers, methodology and per-run records:
 [docs/performance.md](docs/performance.md), [bench/RESULTS.md](bench/RESULTS.md).
 
