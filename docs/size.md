@@ -27,9 +27,9 @@ utility vocabulary — just in different forms:
 - **tailwind-merge's 103.1 KB** = ~24 KB of runtime machinery (trie parser,
   validators, LRU cache, `extendTailwindMerge`/`createTailwindMerge` config
   API) **+ ~82 KB of hand-maintained class-group config** (`getDefaultConfig`).
-- **tw-merge-optimal's 65.7 KB** (patterns mode) = the same vocabulary as
+- **tw-merge-optimal's 66.0 KB** (patterns mode) = the same vocabulary as
   static tables (`G`/`W`/`FN`/`TH`/`P`/`BI` — class names, families,
-  theme sets, pattern grammar, plus the leading-segment scan index) **+ ~2 KB
+  theme sets, pattern grammar, plus the leading-segment scan index) **+ ~2.2 KB
   fixed minified runtime**.
 
 The ~37 KB raw difference is code machinery — parsers, validators, config
@@ -55,13 +55,13 @@ size) so classes the scanner never saw still resolve at runtime.
 The default bundle ships the **full design-system pattern table** (utility
 names, value specs, theme sets — the whole grammar, independent of project
 size), so classes the scanner missed still resolve at runtime; `--no-patterns`
-emits only the scanned classes plus a compact runtime (~2 KB fixed,
+emits only the scanned classes plus a compact runtime (~2.2 KB fixed,
 dependency-free ESM) with class→family (`G`) and family→conflicts (`W`)
 tables and feature-flagged helpers.
 
 Budgets enforced by tests (see [testing.md](testing.md)): exact corpus union
-< 20 KB (measured 15.5 KB), patterns corpus union < 80 KB (measured 67.3 KB),
-small sample < 4 KB (measured 3.8 KB).
+< 20 KB (measured 16.3 KB), patterns corpus union < 80 KB (measured 62.1 KB),
+small sample < 4.3 KB (measured 4.2 KB).
 
 The bundle is **pure browser-ready ESM** — no Node APIs, no `process`,
 `Buffer`, WASM, or imports of any kind. Drop it into a `<script type="module">`

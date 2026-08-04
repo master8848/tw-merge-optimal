@@ -28,16 +28,18 @@ whole-call result cache.
 
 ## Highlights
 
-- **Drop-in `twMerge`/`twJoin`** — same signatures, same right-to-left semantics,
-  verified against tailwind-merge's own corpus.
+- **`twMerge`/`twMergeJoin`/`twJoin`** — tailwind-merge semantics verified against
+  tailwind-merge's own corpus. `twMerge` takes a single already-joined string (the
+  `clsx()` shape, zero rest-arg overhead); `twMergeJoin` is the drop-in variadic
+  signature; `twJoin` is the clsx-style join.
 - **No config** — the design system is declared in CSS via `@utility`/`@theme` (the same
   syntax Tailwind itself uses) and passed with `--css`.
 - **Fast** — ~12× faster than tailwind-merge on cold/dynamic inputs (cache off /
   thrashing); parity-or-better on warm typical calls (single-string calls run 1.3–1.4×
   faster — the `clsx()` + `twMerge(joined)` shape) — and the always-on 8,192-entry
   result cache makes repeated renders a single lookup ([docs/performance.md](docs/performance.md)).
-- **Tiny** — exact mode (`--no-patterns`) emits only the scanned classes: 3.8 KB
-  (small sample), ~15–21 KB on the full corpus/bench unions ([docs/size.md](docs/size.md)).
+- **Tiny** — exact mode (`--no-patterns`) emits only the scanned classes: 4.2 KB
+  (small sample), ~16–21 KB on the full corpus/bench unions ([docs/size.md](docs/size.md)).
 - **`--check` CI conflict gating** — fails the build when conflicting classes are used.
 - **Bundler plugins** — Vite, Rspack, Rsbuild, webpack, Bun, Next.js, Babel.
 

@@ -185,7 +185,8 @@ described in [runtime.md](runtime.md); the key design points:
   prototype-less objects where a fast `in` check is used,
 - runtime helpers are **feature-flagged** (`A` postfix, `B` important,
   `C` arbitrary fallback, `D` patterns mode) and ship only when needed,
-- `twMerge`/`twJoin` always ship,
+- `twMerge` (single-string), `twMergeJoin` (variadic) and `twJoin` always
+  ship, sharing one merge body and one result memo,
 - exact mode emits only the scanned classes; patterns mode additionally
   embeds the pattern tables and the `m()` matcher.
 

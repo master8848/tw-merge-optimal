@@ -33,8 +33,9 @@ test('vite build merges and drops conflicting classes via the plugin', async () 
         writeFileSync(
             join(fixture, 'src', 'main.js'),
             [
-                "import { twMerge, twJoin } from 'tw-merge-optimal';",
-                "console.log(twMerge('px-2 py-1 bg-red', 'p-3 bg-[#B91C1C]'));",
+                "import { twMerge, twMergeJoin, twJoin } from 'tw-merge-optimal';",
+                "console.log(twMergeJoin('px-2 py-1 bg-red', 'p-3 bg-[#B91C1C]'));",
+                "console.log(twMerge('px-2 py-1 bg-red p-3 bg-[#B91C1C]'));",
                 "console.log(twJoin('a', null, ['b', false, 'c']));",
             ].join('\n')
         );

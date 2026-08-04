@@ -4,11 +4,19 @@ import { gzipSync } from 'node:zlib'
 
 // tw-merge-optimal: pre-generated, dependency-free ESM bundle (no init step,
 // no config, no cache — the tables are static data).
-import { twMerge as twMergeOptimal } from './generated/tw-merge-optimal.mjs'
+//
+// Fair-comparison note: tailwind-merge's twMerge takes a variadic ClassValue[]
+// rest-arg signature, so tw-merge-optimal is benchmarked via twMergeJoin —
+// the identical signature and merge semantics. The string-only twMerge (the
+// `clsx()` + `twMerge(joined)` shape 99.9% of callers — shadcn's cn(), etc. —
+// actually use) is benchmarked separately in the "string-only" rows; it is
+// strictly faster than the variadic entry because it skips all rest-arg
+// handling.
+import { twMerge as twMergeOptimal, twMergeJoin as twMergeOptimalJoin } from './generated/tw-merge-optimal.mjs'
 
 // tw-merge-optimal exact mode: --no-patterns shape — only the scanned
 // classes, no pattern/theme tables (smaller bundle, pass-through otherwise).
-import { twMerge as twMergeExact } from './generated/tw-merge-optimal-exact.mjs'
+import { twMerge as twMergeExact, twMergeJoin as twMergeExactJoin } from './generated/tw-merge-optimal-exact.mjs'
 
 // tailwind-merge: reference implementation (point TAILWIND_MERGE_PATH at a
 // different checkout if needed).
@@ -48,11 +56,20 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
     benchWithMemory('simple tailwind-merge', () => {
         twMergeTailwindCached('flex mx-10 px-10', 'mr-5 pr-5')
     })
-    benchWithMemory('simple tw-merge-optimal', () => {
-        twMergeOptimal('flex mx-10 px-10', 'mr-5 pr-5')
+    benchWithMemory('simple tw-merge-optimal (twMergeJoin)', () => {
+        twMergeOptimalJoin('flex mx-10 px-10', 'mr-5 pr-5')
     })
-    benchWithMemory('simple tw-merge-optimal exact', () => {
-        twMergeExact('flex mx-10 px-10', 'mr-5 pr-5')
+    benchWithMemory('simple tw-merge-optimal exact (twMergeJoin)', () => {
+        twMergeExactJoin('flex mx-10 px-10', 'mr-5 pr-5')
+    })
+    // The string-only shape (clsx() already joined): tailwind-merge's twMerge
+    // still pays the variadic machinery; tw-merge-optimal's string-only
+    // twMerge skips it entirely.
+    benchWithMemory('simple string-only tailwind-merge', () => {
+        twMergeTailwindCached('flex mx-10 px-10 mr-5 pr-5')
+    })
+    benchWithMemory('simple string-only tw-merge-optimal', () => {
+        twMergeOptimal('flex mx-10 px-10 mr-5 pr-5')
     })
 
     benchWithMemory('heavy tailwind-merge', () => {
@@ -69,8 +86,8 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
             null,
         )
     })
-    benchWithMemory('heavy tw-merge-optimal', () => {
-        twMergeOptimal(
+    benchWithMemory('heavy tw-merge-optimal (twMergeJoin)', () => {
+        twMergeOptimalJoin(
             'font-medium text-sm leading-16',
             'group/button relative isolate items-center justify-center overflow-hidden rounded-md outline-none transition [-webkit-app-region:no-drag] focus-visible:ring focus-visible:ring-primary',
             'inline-flex',
@@ -83,8 +100,8 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
             null,
         )
     })
-    benchWithMemory('heavy tw-merge-optimal exact', () => {
-        twMergeExact(
+    benchWithMemory('heavy tw-merge-optimal exact (twMergeJoin)', () => {
+        twMergeExactJoin(
             'font-medium text-sm leading-16',
             'group/button relative isolate items-center justify-center overflow-hidden rounded-md outline-none transition [-webkit-app-region:no-drag] focus-visible:ring focus-visible:ring-primary',
             'inline-flex',
@@ -103,14 +120,14 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
             twMergeTailwindCached(...(testDataCollection[index] as TestDataItem))
         }
     })
-    benchWithMemory('collection tw-merge-optimal (no cache needed)', () => {
+    benchWithMemory('collection tw-merge-optimal (twMergeJoin)', () => {
         for (let index = 0; index < testDataCollection.length; ++index) {
-            twMergeOptimal(...(testDataCollection[index] as TestDataItem))
+            twMergeOptimalJoin(...(testDataCollection[index] as TestDataItem))
         }
     })
-    benchWithMemory('collection tw-merge-optimal exact', () => {
+    benchWithMemory('collection tw-merge-optimal exact (twMergeJoin)', () => {
         for (let index = 0; index < testDataCollection.length; ++index) {
-            twMergeExact(...(testDataCollection[index] as TestDataItem))
+            twMergeExactJoin(...(testDataCollection[index] as TestDataItem))
         }
     })
     benchWithMemory('collection tailwind-merge (cache off)', () => {
@@ -122,11 +139,11 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
     benchWithMemory('ultra long list tailwind-merge (cache off)', () => {
         twMergeTailwindNoCache(...ultraLongClassList)
     })
-    benchWithMemory('ultra long list tw-merge-optimal', () => {
-        twMergeOptimal(...ultraLongClassList)
+    benchWithMemory('ultra long list tw-merge-optimal (twMergeJoin)', () => {
+        twMergeOptimalJoin(...ultraLongClassList)
     })
-    benchWithMemory('ultra long list tw-merge-optimal exact', () => {
-        twMergeExact(...ultraLongClassList)
+    benchWithMemory('ultra long list tw-merge-optimal exact (twMergeJoin)', () => {
+        twMergeExactJoin(...ultraLongClassList)
     })
     benchWithMemory('ultra long list tailwind-merge (with cache)', () => {
         twMergeTailwindCached(...ultraLongClassList)
@@ -153,16 +170,16 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
             }
         }
     })
-    benchWithMemory('corpus 349 cases tw-merge-optimal', () => {
+    benchWithMemory('corpus 349 cases tw-merge-optimal (twMergeJoin)', () => {
         for (const [input, expected] of corpusCases) {
-            if (twMergeOptimal(input) !== expected) {
+            if (twMergeOptimalJoin(input) !== expected) {
                 throw new Error(`corpus mismatch: ${JSON.stringify(input)}`)
             }
         }
     })
-    benchWithMemory('corpus 349 cases tw-merge-optimal exact', () => {
+    benchWithMemory('corpus 349 cases tw-merge-optimal exact (twMergeJoin)', () => {
         for (const [input, expected] of corpusCases) {
-            if (twMergeExact(input) !== expected) {
+            if (twMergeExactJoin(input) !== expected) {
                 throw new Error(`corpus mismatch: ${JSON.stringify(input)}`)
             }
         }

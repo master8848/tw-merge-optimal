@@ -107,13 +107,17 @@ node bench/verify.mjs
   bounded at 8,192 entries. React renders repeat identical class strings constantly, so
   repeated calls collapse to a single object lookup (tailwind-merge's configurable
   cacheSize, without the configuration).
-- **Single-argument fast path**: `twMerge(str)` — the typical shape after
-  `clsx(...)` — skips the join loop entirely and looks the raw string up in `RC`
-  directly. Multi-arg calls join with an **inlined string-first loop** (no
-  `toValue` call per element, no re-spread of the argument array).
-- **Split hot entry**: `twMerge` is a tiny wrapper (join + cache lookup) that delegates
-  the merge body to a cold `M()` function — mirroring tailwind-merge's structure so V8
-  fully optimizes the warm path instead of a single 2 KB function.
+- **String-only entry**: `twMerge(str)` — the typical shape after `clsx(...)`
+  (what `cn()` utils pass) — takes a single string and skips the join loop,
+  rest-arg handling and `toValue` entirely; it looks the raw string up in `RC`
+  directly. `twMergeJoin` (the variadic tailwind-merge-compatible signature, used
+  in the benchmarks for a like-for-like comparison) joins with an **inlined
+  string-first loop** (no `toValue` call per element, no re-spread of the
+  argument array) and shares the same `RC`/`M` machinery.
+- **Split hot entry**: both merge entries are tiny wrappers (join/cache lookup)
+  that delegate the merge body to a cold `M()` function — mirroring
+  tailwind-merge's structure so V8 fully optimizes the warm path instead of a
+  single 2 KB function.
 - `twJoin` inlines the string check per element (`typeof a==='string' ? a :
   toValue(a)`), so the common all-strings call never invokes a helper.
 - **Pattern fallback by default**: the bundle embeds the design system's full grammar;

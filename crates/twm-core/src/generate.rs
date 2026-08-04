@@ -391,7 +391,7 @@ export function twJoin(...x){let s='';for(const a of x)if(a){const v=typeof a===
 function toValue(m){if(typeof m==='string')return m;let s='';for(let k=0;k<m.length;k++){if(m[k]){const v=toValue(m[k]);if(v){s&&(s+=' ');s+=v}}}return s}
 "#;
 
-/// `twMerge` (port of `merge-classlist.ts`): right-to-left, last class wins,
+/// `twMergeJoin` (port of `merge-classlist.ts`): right-to-left, last class wins,
 /// conflict key = sorted modifiers + important + family. `seen` is a lazily
 /// allocated array of family keys checked with `includes` (linear scan beats
 /// a Set for the tiny per-family conflict lists) — the same trick
@@ -404,6 +404,12 @@ function toValue(m){if(typeof m==='string')return m;let s='';for(let k=0;k<m.len
 /// external-token branch). When no prefix is configured the scan is byte-for-
 /// byte the plain loop.
 ///
+/// `twMerge` is the same merge for the 99.9% shape — a single already-joined
+/// string (what `clsx()`-based `cn()` utils pass): no rest args, no toValue,
+/// no join loop, straight into the `RC` memo and the `M` merge body. The two
+/// share the same `RC` result memo and are byte-identical on single-string
+/// inputs.
+///
 /// Whole-call results are memoized in `RC` (input -> output), the same trick
 /// as tailwind-merge's opt-in result cache — but always on, because renders
 /// (React etc.) repeat identical class strings constantly. Bounded at 8192
@@ -413,7 +419,7 @@ function toValue(m){if(typeof m==='string')return m;let s='';for(let k=0;k<m.len
 /// (tailwind-merge `cacheSize` parity); `0` disables both caches.
 fn tw_merge_js(prefix: Option<&str>) -> String {
     let mut js = String::from(
-        "let RC=Object.create(null),RCn=0,h;export function twMerge(...x){if(x.length===1&&typeof x[0]==='string'&&(h=RC[x[0]])!==undefined)return h;let l='';if(x.length===1&&typeof x[0]==='string')l=x[0];else for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){l&&(l+=' ');l+=v}}if((h=RC[l])!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}return M(l)}function M(l){const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC[l]=r;RCn++}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
+        "let RC=Object.create(null),RCn=0,h;export function twMerge(s){h=RC[s];if(h!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}return M(s)}export function twMergeJoin(...x){if(x.length===1&&typeof x[0]==='string'&&(h=RC[x[0]])!==undefined)return h;let l='';if(x.length===1&&typeof x[0]==='string')l=x[0];else for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){l&&(l+=' ');l+=v}}if((h=RC[l])!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}return M(l)}function M(l){const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC[l]=r;RCn++}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
     );
     if let Some(p) = prefix {
         js.push_str(&format!(
@@ -427,13 +433,15 @@ fn tw_merge_js(prefix: Option<&str>) -> String {
     js
 }
 
-/// Patterns-mode `twMerge`: same as `TW_MERGE_JS` (short-input fast path,
-/// charCode token scan, lazy `seen`) with the pattern fallback branch (D).
+/// Patterns-mode `twMergeJoin`/`twMerge`: same as `TW_MERGE_JS` (short-input
+/// fast path, charCode token scan, lazy `seen`) with the pattern fallback
+/// branch (D). `twMerge` is the single-string wrapper; `twMergeJoin` the
+/// variadic one — see `tw_merge_js`.
 /// Postfix-special clauses (font-size -> leading conflict, named containers)
 /// are emitted only when those families exist.
 fn tw_merge_patterns_js(p: &PatternTable, prefix: Option<&str>) -> String {
     let mut js = String::from(
-        "let RC=Object.create(null),RCn=0,h;export function twMerge(...x){if(x.length===1&&typeof x[0]==='string'&&(h=RC[x[0]])!==undefined)return h;let l='';if(x.length===1&&typeof x[0]==='string')l=x[0];else for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){l&&(l+=' ');l+=v}}if((h=RC[l])!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}return M(l)}function M(l){const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC[l]=r;RCn++}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
+        "let RC=Object.create(null),RCn=0,h;export function twMerge(s){h=RC[s];if(h!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}return M(s)}export function twMergeJoin(...x){if(x.length===1&&typeof x[0]==='string'&&(h=RC[x[0]])!==undefined)return h;let l='';if(x.length===1&&typeof x[0]==='string')l=x[0];else for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){l&&(l+=' ');l+=v}}if((h=RC[l])!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}return M(l)}function M(l){const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC[l]=r;RCn++}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
     );
     if let Some(pfx) = prefix {
         js.push_str(&format!(
@@ -592,7 +600,8 @@ mod tests {
                 patterns: false,
             },
         );
-        assert!(js.contains("export function twMerge"));
+        assert!(js.contains("export function twMerge(s)"));
+        assert!(js.contains("export function twMergeJoin"));
         assert!(js.contains("export function twJoin"));
         assert!(js.contains("p-2"));
     }
@@ -718,7 +727,8 @@ mod tests {
             js.contains("const TH=["),
             "patterns bundle must contain theme sets"
         );
-        assert!(js.contains("export function twMerge"));
+        assert!(js.contains("export function twMerge(s)"));
+        assert!(js.contains("export function twMergeJoin"));
 
         let exact = generate_js(
             &t,

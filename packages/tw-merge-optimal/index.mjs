@@ -1,1 +1,1 @@
-export { twMerge, twJoin } from './generated.mjs';
+export { twMerge, twMergeJoin, twJoin } from './generated.mjs';

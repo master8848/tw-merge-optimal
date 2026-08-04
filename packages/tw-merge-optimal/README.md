@@ -207,10 +207,11 @@ The package ships `index.d.ts` (the `ClassValue` signature mirrors
 tailwind-merge):
 
 ```ts
-import { twMerge, twJoin } from 'tw-merge-optimal'
+import { twMerge, twMergeJoin, twJoin } from 'tw-merge-optimal'
 
-twMerge('px-2 py-1', null, ['p-3', false]) // : string
-twJoin('a', ['b', undefined])               // : string
+twMerge('px-2 py-1 p-3')        // : string — single string only
+twMergeJoin('px-2 py-1', null, ['p-3', false]) // : string — variadic
+twJoin('a', ['b', undefined])   // : string
 ```
 
 No build step needed — `"types": "./index.d.ts"` is wired in `package.json`

@@ -1,16 +1,20 @@
 # Migrating from tailwind-merge
 
-`twMerge`/`twJoin` are drop-in replacements — same signatures (rest args, nested
+`twMergeJoin`/`twJoin` are drop-in replacements — same signatures (rest args, nested
 arrays, falsy values ignored), same merge semantics, verified against tailwind-merge's
-own corpus. Switching takes five steps:
+own corpus. `twMerge` is the same merge for a single already-joined string (the shape
+`clsx()`-based `cn()` utils pass it) — see [deviations.md](deviations.md). Switching
+takes five steps:
 
 1. **Swap the import.**
 
    ```js
    // before
    import { twMerge, twJoin } from 'tailwind-merge'
-   // after
-   import { twMerge, twJoin } from 'tw-merge-optimal'
+   // after — drop-in: variadic signature, same semantics
+   import { twMergeJoin, twJoin } from 'tw-merge-optimal'
+   // or — the common single-string shape (`cn(...)` = `twMerge(clsx(...))`):
+   import { twMerge } from 'tw-merge-optimal'
    ```
 
    Or skip step 2 entirely with the prebuilt full-grammar bundle:
@@ -39,9 +43,11 @@ own corpus. Switching takes five steps:
    instead of breaking.
 
 5. **Check the differences.** Everything tailwind-merge does is preserved except the
-   config API; the one deliberate behavior change is that arbitrary properties
-   (`[padding:1rem]`) now merge with the standard classes they write (`p-4`) — see
-   [deviations.md](deviations.md). Roll back any time by reverting step 1.
+   config API; the two deliberate behavior changes are that arbitrary properties
+   (`[padding:1rem]`) now merge with the standard classes they write (`p-4`), and
+   that `twMerge` accepts a single string only (`twMergeJoin` is the variadic
+   drop-in) — see [deviations.md](deviations.md). Roll back any time by reverting
+   step 1.
 
 Cache tuning maps directly: tailwind-merge's `cacheSize` config option becomes
 `setCacheSize(n)` (same semantics — `0` disables caching; default 8192 vs

@@ -38,9 +38,11 @@ twm-gen: 42 files scanned, 137 unique candidates, wrote src/tw-merge.mjs (5218 b
 Use it from JS:
 
 ```ts
-import { twMerge, twJoin } from './tw-merge.mjs'
+import { twMerge, twMergeJoin, twJoin } from './tw-merge.mjs'
 
-twMerge('px-2 py-1 bg-red hover:bg-dark-red', 'p-3 bg-[#B91C1C]')
+twMerge('px-2 py-1 bg-red hover:bg-dark-red p-3 bg-[#B91C1C]')
+// → 'hover:bg-dark-red p-3 bg-[#B91C1C]'
+twMergeJoin('px-2 py-1 bg-red hover:bg-dark-red', 'p-3 bg-[#B91C1C]')
 // → 'hover:bg-dark-red p-3 bg-[#B91C1C]'
 twJoin('a', null, ['b', false, 'c']) // → 'a b c'
 ```

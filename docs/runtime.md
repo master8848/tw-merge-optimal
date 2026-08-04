@@ -150,12 +150,16 @@ Resolves an **unseen** class against `P`:
 
 Only runs on a `G` miss, so the O(1) table stays the hot path.
 
-### `twMerge(...x)` — the merge loop
+### `twMerge(s)` / `twMergeJoin(...x)` — the merge loop
+
+Both entries share one merge body (`M`) and one result memo (`RC`):
 
 ```
-1. l = twJoin(...x)              — flatten + join arguments
-2. RC memo: if l was merged before, return the cached string (always on,
-   bounded by setCacheSize, default 8192, cleared when exceeded)
+1. twMerge:  RC memo lookup on the raw string — no join, no arg handling
+   twMergeJoin: l = join arguments (strings + nested arrays, falsy skipped,
+   inlined string-first loop) — the tailwind-merge-compatible variadic shape
+2. RC memo: if the input was merged before, return the cached string (always
+   on, bounded by setCacheSize, default 8192, cleared when exceeded)
 3. t = l.trim()
 4. short-input fast path: t.length < MC → collapse whitespace, done
    (MC is generated at build time: the project's shortest pair that the
@@ -180,6 +184,12 @@ Only runs on a `G` miss, so the O(1) table stays the hot path.
           to seen, keep the class
 7. cache the result in RC, return it
 ```
+
+`twMerge` accepts exactly one string — the shape `clsx()`-based `cn()` utils
+produce — so it skips steps 1's rest-arg/array handling entirely. On
+single-string inputs the two are byte-identical; on multi-arg/array inputs
+`twMerge` has nothing to join, so use `twMergeJoin` there (see
+[deviations.md](deviations.md)).
 
 `seen` is a lazily allocated plain array checked with `includes` — faster
 than a `Set` for the tiny per-family conflict lists (the same trick

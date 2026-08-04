@@ -1,5 +1,17 @@
 # Known deviations (v0.1)
 
+- **`twMerge` takes exactly one string; the variadic merge is `twMergeJoin`.**
+  tailwind-merge's `twMerge(...classes: ClassValue[])` accepts a rest-arg mix of
+  strings, `null`/`undefined`/`false` and nested arrays. tw-merge-optimal's
+  `twMerge(classString: string)` accepts exactly one string — the shape the
+  `clsx()` + `twMerge()` pattern (shadcn's `cn()`, etc.) actually produces — so
+  the hot path skips all rest-arg, falsy and array handling, then joins nothing
+  (the string is already joined). Calls that pass multiple arguments or arrays
+  use `twMergeJoin(...classes)` instead: identical merge semantics, verified
+  against the same 349-case corpus. `twJoin` keeps the clsx-style signature.
+  Benchmarks therefore compare the variadic `twMergeJoin` against
+  tailwind-merge's variadic `twMerge` (a like-for-like comparison); the
+  string-only `twMerge` is measured in separate rows.
 - **Config API not implemented.** The tailwind-merge config-API test files
   (create/extend-tailwind-merge, merge-configs, theme, experimental-parse-class-name,
   default-config, class-map, lazy-initialization, type-generics, public-api) are
