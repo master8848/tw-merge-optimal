@@ -214,7 +214,7 @@ LRU-500 because repeated renders hit a larger working set.
 | Tables | `G`, `W` | `G`, `W`, `FN`, `PR`, `W2`, `TH`, `KW`, `P` |
 | Unseen classes | pass through unmerged (safe) | resolved by `m()` — full tailwind-merge-style heuristics |
 | Flags | `A`,`B`,`C` | `A`,`B`,`C`,`D` |
-| Bundle size | exact only (3.5 KB sample, ~15.2 KB corpus union, ~20.2 KB bench union) | full design-system grammar (62.6 KB raw / 17.2 KB gzip) |
+| Bundle size | exact only (3.8 KB sample, ~15.5 KB corpus union, ~20.6 KB bench union) | full design-system grammar (65.7 KB raw / 18.7 KB gzip) |
 | Correctness guarantee | scanned classes only | entire design system |
 
 Both modes produce **byte-identical output** on every class the exact mode

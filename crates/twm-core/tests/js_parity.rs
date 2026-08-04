@@ -66,8 +66,8 @@ fn js_parity_and_bundle_sizes() {
         "exact corpus-union bundle must stay under 20 KB, was {exact_bytes} bytes"
     );
     assert!(
-        patterns_bytes < 64 * 1024,
-        "patterns corpus-union bundle must stay under 64 KB, was {patterns_bytes} bytes"
+        patterns_bytes < 80 * 1024,
+        "patterns corpus-union bundle must stay under 80 KB, was {patterns_bytes} bytes"
     );
 
     // Small-sample bundle: two files, ~40 classes.

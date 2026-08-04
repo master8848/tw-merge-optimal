@@ -249,30 +249,37 @@ impl ConflictTable {
     /// output).
     pub fn min_conflict_pair_len(&self) -> Option<usize> {
         let w = self.family_conflicts();
-        let mut classes: Vec<(usize, u16)> = Vec::with_capacity(
-            self.entries.len() + self.postfix_entries.len() + self.arb_fallbacks.len(),
-        );
-        for (key, e) in self.entries.iter() {
-            classes.push((key.encode_utf16().count(), self.family_id_of(&e.family)));
-        }
-        for (key, e) in self.postfix_entries.iter() {
-            classes.push((key.encode_utf16().count(), self.family_id_of(&e.family)));
-        }
-        for (key, e) in self.arb_fallbacks.iter() {
-            classes.push((key.encode_utf16().count(), self.family_id_of(&e.family)));
-        }
+        // Only the SHORTEST runtime-lookup key per family matters: the
+        // minimum over all same-family pairs (i,j) is the duplicate bound
+        // 2*min_len+1 of that family's shortest key, and the minimum over
+        // all cross-family pairs (i,j) is l_fa + 1 + l_fb for the two
+        // shortest keys of any conflicting family pair — any longer key in
+        // the same family only makes both sums larger.
+        let mut shortest: Vec<Option<usize>> = vec![None; self.family_names.len()];
         let mut best = usize::MAX;
-        for i in 0..classes.len() {
-            let (la, fa) = classes[i];
-            for j in i + 1..classes.len() {
-                let (lb, fb) = classes[j];
-                if w[fa as usize].contains(&fb) || w[fb as usize].contains(&fa) {
-                    best = best.min(la + 1 + lb);
-                }
+        for (key, e) in self
+            .entries
+            .iter()
+            .chain(self.postfix_entries.iter())
+            .chain(self.arb_fallbacks.iter())
+        {
+            let f = self.family_id_of(&e.family) as usize;
+            let l = key.encode_utf16().count();
+            if shortest[f].map_or(true, |s| l < s) {
+                shortest[f] = Some(l);
             }
             // Identical classes dedupe, so the fast path must not fire for
             // inputs that could hold `a a`.
-            best = best.min(la * 2 + 1);
+            best = best.min(l * 2 + 1);
+        }
+        for fa in 0..shortest.len() {
+            let Some(la) = shortest[fa] else { continue };
+            for fb in fa + 1..shortest.len() {
+                let Some(lb) = shortest[fb] else { continue };
+                if w[fa].contains(&(fb as u16)) || w[fb].contains(&(fa as u16)) {
+                    best = best.min(la + 1 + lb);
+                }
+            }
         }
         (best != usize::MAX).then_some(best)
     }

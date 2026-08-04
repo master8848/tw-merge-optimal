@@ -32,11 +32,11 @@ whole-call result cache.
   verified against tailwind-merge's own corpus.
 - **No config** — the design system is declared in CSS via `@utility`/`@theme` (the same
   syntax Tailwind itself uses) and passed with `--css`.
-- **Fast** — 9–11× faster than tailwind-merge on cold/dynamic inputs (cache off /
+- **Fast** — ~12× faster than tailwind-merge on cold/dynamic inputs (cache off /
   thrashing); parity on typical short calls — and the always-on 8,192-entry result
   cache makes repeated renders a single lookup ([docs/performance.md](docs/performance.md)).
-- **Tiny** — exact mode (`--no-patterns`) emits only the scanned classes: 3.5 KB
-  (small sample), ~15–20 KB on the full corpus/bench unions ([docs/size.md](docs/size.md)).
+- **Tiny** — exact mode (`--no-patterns`) emits only the scanned classes: 3.8 KB
+  (small sample), ~15–21 KB on the full corpus/bench unions ([docs/size.md](docs/size.md)).
 - **`--check` CI conflict gating** — fails the build when conflicting classes are used.
 - **Bundler plugins** — Vite, Rspack, Rsbuild, webpack, Bun, Next.js, Babel.
 
@@ -166,7 +166,7 @@ Full guide: [packages/tw-merge-optimal/README.md](packages/tw-merge-optimal/READ
 
 ## Performance at a glance
 
-Parity on typical short calls (1.0–1.15×, flips run to run); 9–11× faster on
+Parity on typical short calls (1.0–1.05×, flips run to run); ~12× faster on
 cold/dynamic inputs (always-on 8,192-entry result cache); patterns and exact modes
 measure identically; zero init step vs ~1–8 ms lazy build on tailwind-merge's first
 call. Honest numbers and methodology: [docs/performance.md](docs/performance.md).

@@ -2,7 +2,9 @@
     "name": "tw-merge-optimal-bench",
     "private": true,
     "type": "module",
-    "workspaces": ["packages/tw-merge-optimal"],
+    "workspaces": [
+        "packages/tw-merge-optimal"
+    ],
     "scripts": {
         "bench:gen": "cargo run -p twm-core --bin bench_gen",
         "bench": "npm run bench:gen && vitest bench --no-watch",
@@ -11,6 +13,7 @@
         "test:full": "node packages/tw-merge-optimal/test/full.test.mjs"
     },
     "devDependencies": {
+        "regexp-tree": "^0.1.27",
         "vitest": "^4.1.9"
     }
 }

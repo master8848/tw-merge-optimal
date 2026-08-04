@@ -78,7 +78,7 @@ $ twm-gen --css site.css --out tw-merge.mjs src/
 |---|---|---|
 | What's in the bundle | Scanned classes **+ the full design-system grammar** (every utility name, value spec, theme set, keyword) | Only the scanned classes |
 | Unseen classes | Resolved at runtime via the `m()` matcher — runtime-composed strings, CMS content, arbitrary values all merge correctly | Pass through unmerged (the safe direction) |
-| Bundle size | 62.6 KB raw (~17 KB gzip) for the full grammar, independent of project size — see [size.md](size.md) | 3.5 KB small sample, ~15 KB corpus union, ~20 KB bench union (962 classes) |
+| Bundle size | 65.7 KB raw (~18.7 KB gzip) for the full grammar, independent of project size — see [size.md](size.md) | 3.8 KB small sample, ~15.5 KB corpus union, ~20.6 KB bench union (962 classes) |
 | Runtime | O(1) `G`/`W` table lookups; patterns only run on a table miss | O(1) table lookups only |
 | When to use | Default. Any project with dynamic class strings | Smallest bundle possible; every class is statically known and regeneration is wired into CI |
 

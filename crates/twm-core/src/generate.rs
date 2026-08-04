@@ -6,6 +6,7 @@
 
 use crate::conflict::ConflictTable;
 use crate::patterns::{type_code, PatternTable};
+use std::collections::BTreeMap;
 
 pub struct GenerateOptions<'a> {
     pub prefix: Option<&'a str>,
@@ -61,7 +62,7 @@ pub fn generate_js(
     // `cacheSize` parity). 0 disables both caches (`RC` whole-call + `PC`
     // per-class parse) — every merge recomputes, memory stays flat.
     js.push_str(
-        "let CS=8192;export function setCacheSize(n){CS=n>0?n|0:0;RC.clear();PC.clear()}\n",
+        "let CS=8192;export function setCacheSize(n){CS=n>0?n|0:0;RC=Object.create(null);RCn=0;PC=Object.create(null);PCn=0}\n",
     );
 
     // GROUPS: base class name -> family id. Postfix variants get a trailing
@@ -187,8 +188,10 @@ pub fn generate_js(
 
         // P: flat array of pattern records: [name, wildcard, family_id,
         // conflict_wid, ngroups, (nitems, spec codes...)...] per alternative.
-        js.push_str("const P=[");
-        let mut pfirst = true;
+        // Records are collected first (name + JS elements in emission order)
+        // so the leading-segment index B below can be built from the exact
+        // flat layout.
+        let mut records: Vec<Record> = Vec::new();
         for u in &p.utilities {
             let name = if u.wildcard {
                 &u.name[..u.name.len() - 1]
@@ -196,30 +199,69 @@ pub fn generate_js(
                 &u.name
             };
             for a in &u.alts {
-                if !pfirst {
-                    js.push(',');
-                }
-                pfirst = false;
-                js.push_str(&js_string(name));
-                js.push(',');
-                js.push_str(if u.wildcard { "1" } else { "0" });
-                js.push(',');
-                js.push_str(&a.family_id.to_string());
-                js.push(',');
-                js.push_str(&a.conflict_wid.to_string());
-                js.push(',');
-                js.push_str(&a.groups.len().to_string());
+                let mut elems: Vec<String> = Vec::new();
+                elems.push(js_string(name));
+                elems.push(if u.wildcard { "1" } else { "0" }.to_string());
+                elems.push(a.family_id.to_string());
+                elems.push(a.conflict_wid.to_string());
+                elems.push(a.groups.len().to_string());
                 for group in &a.groups {
-                    js.push(',');
-                    js.push_str(&group.len().to_string());
+                    elems.push(group.len().to_string());
                     for code in group {
-                        js.push(',');
-                        js.push_str(&code.to_string());
+                        elems.push(code.to_string());
                     }
                 }
+                records.push(Record {
+                    name: name.to_string(),
+                    elems,
+                });
+            }
+        }
+        js.push_str("const P=[");
+        for (i, r) in records.iter().enumerate() {
+            if i > 0 {
+                js.push(',');
+            }
+            for (j, e) in r.elems.iter().enumerate() {
+                if j > 0 {
+                    js.push(',');
+                }
+                js.push_str(e);
             }
         }
         js.push_str("];\n");
+
+        // BI: leading-segment index over P. Bucket key = first two chars of
+        // the record name (the first char alone when the name is one char);
+        // value = every [start,end) span of flat indices holding records of
+        // that prefix. Contiguous same-prefix runs merge into one span;
+        // same-prefix records can still be non-contiguous in P (exact names
+        // sort before wildcards), so a bucket may hold several spans —
+        // iterating them in emission order preserves the first-match-wins
+        // order of the flat scan. Exactly ONE key per prefix: JS object
+        // literals collapse duplicate keys (last wins). (Named BI, not B:
+        // the feature-flag consts A/B/C already occupy B.)
+        let spans = leading_segment_spans(&records);
+        js.push_str("const BI=Object.assign(Object.create(null),{");
+        for (i, (key, ss)) in spans.iter().enumerate() {
+            if i > 0 {
+                js.push(',');
+            }
+            js.push_str(&js_key(key));
+            js.push_str(":[");
+            for (j, (a, b)) in ss.iter().enumerate() {
+                if j > 0 {
+                    js.push(',');
+                }
+                js.push('[');
+                js.push_str(&a.to_string());
+                js.push(',');
+                js.push_str(&b.to_string());
+                js.push(']');
+            }
+            js.push(']');
+        }
+        js.push_str("});\n");
 
         // Postfix-special family ids (only the ones that exist).
         if let Some(ld) = p.leading {
@@ -253,6 +295,36 @@ pub fn generate_js(
         js.push_str(&tw_merge_js(opts.prefix));
     }
     js
+}
+
+/// One flat pattern record: `name` + the JS elements emitted for it, in
+/// emission order.
+struct Record {
+    name: String,
+    elems: Vec<String>,
+}
+
+/// Bucket spans over flat pattern records: key = first two chars of the name
+/// (the first char alone when the name is one char), value = every
+/// `[start,end)` range of flat indices holding records of that prefix, in
+/// emission order. Contiguous same-prefix runs are merged into one span.
+/// Index 0 is the first element of the first record (the flat array has no
+/// leading sentinel).
+fn leading_segment_spans(records: &[Record]) -> BTreeMap<String, Vec<(usize, usize)>> {
+    let mut spans: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
+    let mut flat = 0;
+    for r in records {
+        let key: String = r.name.chars().take(2).collect();
+        let end = flat + r.elems.len();
+        let ss = spans.entry(key).or_default();
+        if ss.last().is_some_and(|(_, e)| *e == flat) {
+            ss.last_mut().unwrap().1 = end;
+        } else {
+            ss.push((flat, end));
+        }
+        flat = end;
+    }
+    spans
 }
 
 /// JSON-quoted JS string literal.
@@ -296,14 +368,14 @@ fn js_key(s: &str) -> String {
 /// `cachedParseClassName` applies; class names repeat heavily in practice),
 /// with the memo bounded at 8192 entries to cap memory on long-lived apps.
 const PARSE_JS: &str = r#"
-const PC=new Map();function p(c){let r=PC.get(c);if(r!==undefined)return r;if(CS&&PC.size>CS)PC.clear();if(typeof PREFIX!=='undefined'){const f=PREFIX+':';if(!c.startsWith(f)){r=[0,[],c,0,0,1];if(CS)PC.set(c,r);return r}c=c.slice(f.length)}const m=[];let bs=0,ps=0,ms=0,pp=-1;for(let i=0;i<c.length;i++){const ch=c[i];if(bs===0&&ps===0){if(ch===':'){m.push(c.slice(ms,i));ms=i+1;continue}if(ch==='/'&&pp<0)pp=i}if(ch==='[')bs++;else if(ch===']')bs--;else if(ch==='(')ps++;else if(ch===')')ps--}let b=ms===0?c:c.slice(ms);let im=0;if(B){if(b.endsWith('!')){b=b.slice(0,-1);im=1}else if(b.startsWith('!')){b=b.slice(1);im=1}}let po=0;if(A&&pp>ms){po=1;b=b.slice(0,pp-ms)}let ar=0;if(C){const ai=b.search(/[\[(]/);if(ai>0)ar=b.slice(0,ai)}r=[im,m,b,po,ar,0];if(CS)PC.set(c,r);return r}
+let PC=Object.create(null),PCn=0;function p(c){let r=PC[c];if(r!==undefined)return r;if(CS&&PCn>CS){PC=Object.create(null);PCn=0}if(typeof PREFIX!=='undefined'){const f=PREFIX+':';if(!c.startsWith(f)){r=[0,[],c,0,0,1];if(CS){PC[c]=r;PCn++}return r}c=c.slice(f.length)}const m=[];let bs=0,ps=0,ms=0,pp=-1;for(let i=0;i<c.length;i++){const ch=c[i];if(bs===0&&ps===0){if(ch===':'){m.push(c.slice(ms,i));ms=i+1;continue}if(ch==='/'&&pp<0)pp=i}if(ch==='[')bs++;else if(ch===']')bs--;else if(ch==='(')ps++;else if(ch===')')ps--}let b=ms===0?c:c.slice(ms);let im=0;if(B){if(b.endsWith('!')){b=b.slice(0,-1);im=1}else if(b.startsWith('!')){b=b.slice(1);im=1}}let po=0;if(A&&pp>ms){po=1;b=b.slice(0,pp-ms)}let ar=0;if(C){const a0=b.indexOf('['),a1=b.indexOf('(');const ai=a0<0?a1:a1<0?a0:a0<a1?a0:a1;if(ai>0)ar=b.slice(0,ai)}r=[im,m,b,po,ar,0];if(CS){PC[c]=r;PCn++}return r}
 "#;
 
 /// Patterns-mode variant of `PARSE_JS`: identical, but the result array is
 /// `[im,m,b,po,ar,ext,pf]` where `pf` is the postfix part (`/...`) when one
 /// was found, else 0.
 const PARSE_PATTERNS_JS: &str = r#"
-const PC=new Map();function p(c){let r=PC.get(c);if(r!==undefined)return r;if(CS&&PC.size>CS)PC.clear();if(typeof PREFIX!=='undefined'){const f=PREFIX+':';if(!c.startsWith(f)){r=[0,[],c,0,0,1,0];if(CS)PC.set(c,r);return r}c=c.slice(f.length)}const m=[];let bs=0,ps=0,ms=0,pp=-1;for(let i=0;i<c.length;i++){const ch=c[i];if(bs===0&&ps===0){if(ch===':'){m.push(c.slice(ms,i));ms=i+1;continue}if(ch==='/'&&pp<0)pp=i}if(ch==='[')bs++;else if(ch===']')bs--;else if(ch==='(')ps++;else if(ch===')')ps--}let b=ms===0?c:c.slice(ms);let im=0;if(B){if(b.endsWith('!')){b=b.slice(0,-1);im=1}else if(b.startsWith('!')){b=b.slice(1);im=1}}let po=0;if(A&&pp>ms){po=1;b=b.slice(0,pp-ms)}let ar=0;if(C){const ai=b.search(/[\[(]/);if(ai>0)ar=b.slice(0,ai)}r=[im,m,b,po,ar,0,po?c.slice(pp):0];if(CS)PC.set(c,r);return r}
+let PC=Object.create(null),PCn=0;function p(c){let r=PC[c];if(r!==undefined)return r;if(CS&&PCn>CS){PC=Object.create(null);PCn=0}if(typeof PREFIX!=='undefined'){const f=PREFIX+':';if(!c.startsWith(f)){r=[0,[],c,0,0,1,0];if(CS){PC[c]=r;PCn++}return r}c=c.slice(f.length)}const m=[];let bs=0,ps=0,ms=0,pp=-1;for(let i=0;i<c.length;i++){const ch=c[i];if(bs===0&&ps===0){if(ch===':'){m.push(c.slice(ms,i));ms=i+1;continue}if(ch==='/'&&pp<0)pp=i}if(ch==='[')bs++;else if(ch===']')bs--;else if(ch==='(')ps++;else if(ch===')')ps--}let b=ms===0?c:c.slice(ms);let im=0;if(B){if(b.endsWith('!')){b=b.slice(0,-1);im=1}else if(b.startsWith('!')){b=b.slice(1);im=1}}let po=0;if(A&&pp>ms){po=1;b=b.slice(0,pp-ms)}let ar=0;if(C){const a0=b.indexOf('['),a1=b.indexOf('(');const ai=a0<0?a1:a1<0?a0:a0<a1?a0:a1;if(ai>0)ar=b.slice(0,ai)}r=[im,m,b,po,ar,0,po?c.slice(pp):0];if(CS){PC[c]=r;PCn++}return r}
 "#;
 
 /// Modifier sorting with order-sensitive anchors (port of `sort-modifiers.ts`).
@@ -339,7 +411,7 @@ function toValue(m){if(typeof m==='string')return m;let s='';for(let k=0;k<m.len
 /// (tailwind-merge `cacheSize` parity); `0` disables both caches.
 fn tw_merge_js(prefix: Option<&str>) -> String {
     let mut js = String::from(
-        "const RC=new Map();export function twMerge(...x){const l=twJoin(...x),h=RC.get(l);if(h!==undefined)return h;if(CS&&RC.size>CS)RC.clear();const t=l.trim();if(t.length<MC){const r=t.replace(/\\s+/g,' ');if(CS)RC.set(l,r);return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
+        "let RC=Object.create(null),RCn=0;export function twMerge(...x){const l=twJoin(...x),h=RC[l];if(h!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC[l]=r;RCn++}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
     );
     if let Some(p) = prefix {
         js.push_str(&format!(
@@ -348,7 +420,7 @@ fn tw_merge_js(prefix: Option<&str>) -> String {
         ));
     }
     js.push_str(
-        "const q=p(c);if(q[5]){o=c+(o?' '+o:'');continue}let f;if(A&&q[3]&&(q[2]+'/')in G)f=G[q[2]+'/'];else if(q[2]in G)f=G[q[2]];else if(C&&q[4]&&(q[4]+'arb')in G)f=G[q[4]+'arb'];else{o=c+(o?' '+o:'');continue}const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.includes(k))continue;const cf=W[f],pre=v+(q[0]?'!':'');if(!seen)seen=[];for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}if(CS)RC.set(l,o);return o}",
+        "const q=p(c);if(q[5]){o=c+(o?' '+o:'');continue}let f;if(A&&q[3]&&(q[2]+'/')in G)f=G[q[2]+'/'];else if(q[2]in G)f=G[q[2]];else if(C&&q[4]&&(q[4]+'arb')in G)f=G[q[4]+'arb'];else{o=c+(o?' '+o:'');continue}const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.length>=64)seen=new Set(seen);if(seen&&(seen.add?seen.has(k):seen.includes(k)))continue;const cf=W[f],pre=v+(q[0]?'!':'');if(!seen)seen=[];if(seen.add)for(let j=0;j<cf.length;j++)seen.add(pre+cf[j]);else for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}if(CS){RC[l]=o;RCn++}return o}",
     );
     js
 }
@@ -359,7 +431,7 @@ fn tw_merge_js(prefix: Option<&str>) -> String {
 /// are emitted only when those families exist.
 fn tw_merge_patterns_js(p: &PatternTable, prefix: Option<&str>) -> String {
     let mut js = String::from(
-        "const RC=new Map();export function twMerge(...x){const l=twJoin(...x),h=RC.get(l);if(h!==undefined)return h;if(CS&&RC.size>CS)RC.clear();const t=l.trim();if(t.length<MC){const r=t.replace(/\\s+/g,' ');if(CS)RC.set(l,r);return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
+        "let RC=Object.create(null),RCn=0;export function twMerge(...x){const l=twJoin(...x),h=RC[l];if(h!==undefined)return h;if(CS&&RCn>CS){RC=Object.create(null);RCn=0}const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC[l]=r;RCn++}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
     );
     if let Some(pfx) = prefix {
         js.push_str(&format!(
@@ -380,7 +452,7 @@ fn tw_merge_patterns_js(p: &PatternTable, prefix: Option<&str>) -> String {
         js.push_str("if(CT!==undefined&&CN!==undefined&&f===CT&&cn(q[2]+q[6]))f=CN,cf=W[CN];");
     }
     js.push_str(
-        "}}else{o=c+(o?' '+o:'');continue}if(cf===undefined)cf=W[f];if(cf===undefined)cf=[f];const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.includes(k))continue;const pre=v+(q[0]?'!':'');if(!seen)seen=[];for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}if(CS)RC.set(l,o);return o}",
+        "}}else{o=c+(o?' '+o:'');continue}if(cf===undefined)cf=W[f];if(cf===undefined)cf=[f];const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.length>=64)seen=new Set(seen);if(seen&&(seen.add?seen.has(k):seen.includes(k)))continue;const pre=v+(q[0]?'!':'');if(!seen)seen=[];if(seen.add)for(let j=0;j<cf.length;j++)seen.add(pre+cf[j]);else for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}if(CS){RC[l]=o;RCn++}return o}",
     );
     js
 }
@@ -481,8 +553,11 @@ fn validators_js() -> String {
 /// resolves an unseen class against the pattern table and returns
 /// `[family, conflicts]` or 0. Arbitrary properties resolve via the PR
 /// property->family table so they merge with the standard classes they write.
+/// The flat `P` scan is indexed by the leading-segment table `BI` (see the
+/// generator): only the spans whose prefix equals the first two chars of `v`
+/// (the first char for one-char `v`) are scanned.
 const PATTERN_MATCH_JS: &str = r#"
-const THS=[];function th(i){return THS[i]||(THS[i]=new Set(TH[i].split(',')))}let K;function kws(){if(K===undefined)K=KW.split(',');return K}function cn(v){return v.startsWith('@container')&&((v[10]==='/'&&v[11])||(v[11]==='s'&&v[16]&&v.slice(10).startsWith('-size/'))||(v[11]==='n'&&v[18]&&v.slice(10).startsWith('-normal/')))}function m(v){if(v[0]==='['&&v[v.length-1]===']'){const x=v.slice(1,-1),c=x.indexOf(':');if(c>0){const p=x.slice(0,c);if(p&&PR[p]!==undefined){const f=PR[p];return[f,W[f]]}const k='arbitrary..'+p;let f=FN.indexOf(k);return f<0?[k,[k]]:[f,[f]]}}if(v[0]==='-')v=v.slice(1);for(let i=0;i<P.length;){const n=P[i++],w=P[i++],f=P[i++],wid=P[i++],g=P[i++];if(!(w?v.length>n.length&&v.startsWith(n):v===n)){for(let j=0;j<g;j++){const c2=P[i++];i+=c2}continue}const val=w?v.slice(n.length):'';let ok=1;for(let j=0;j<g;j++){const c2=P[i++];let a=0;for(let k=0;k<c2;k++){const s=P[i++];a=a||(s>=5000?th(s-5000).has(val):s>=4000?kws()[s-4000]===val:s&&VT(s,val))}if(!a){ok=0;break}}if(ok)return [f,W2[wid]]}return 0}
+const THS=[];function th(i){return THS[i]||(THS[i]=new Set(TH[i].split(',')))}let K;function kws(){if(K===undefined)K=KW.split(',');return K}function cn(v){return v.startsWith('@container')&&((v[10]==='/'&&v[11])||(v[11]==='s'&&v[16]&&v.slice(10).startsWith('-size/'))||(v[11]==='n'&&v[18]&&v.slice(10).startsWith('-normal/')))}function m(v){if(v[0]==='['&&v[v.length-1]===']'){const x=v.slice(1,-1),c=x.indexOf(':');if(c>0){const p=x.slice(0,c);if(p&&PR[p]!==undefined){const f=PR[p];return[f,W[f]]}const k='arbitrary..'+p;return[k,[k]]}}if(v[0]==='-')v=v.slice(1);const rs=BI[v.length>1?v[0]+v[1]:v[0]];if(!rs)return 0;for(let r=0;r<rs.length;r++){for(let i=rs[r][0];i<rs[r][1];){const n=P[i++],w=P[i++],f=P[i++],wid=P[i++],g=P[i++];if(!(w?v.length>n.length&&v.startsWith(n):v===n)){for(let j=0;j<g;j++){const c2=P[i++];i+=c2}continue}const val=w?v.slice(n.length):'';let ok=1;for(let j=0;j<g;j++){const c2=P[i++];let a=0;for(let k=0;k<c2;k++){const s=P[i++];a=a||(s>=5000?th(s-5000).has(val):s>=4000?kws()[s-4000]===val:s&&VT(s,val))}if(!a){ok=0;break}}if(ok)return [f,W2[wid]]}}return 0}
 "#;
 
 #[cfg(test)]
@@ -663,5 +738,110 @@ mod tests {
             .replace("[0,[],c,0,0,1,0]", "[0,[],c,0,0,1]")
             .replace("r=[im,m,b,po,ar,0,po?c.slice(pp):0]", "r=[im,m,b,po,ar,0]");
         assert_eq!(pat, PARSE_JS);
+    }
+
+    #[test]
+    fn b_spans_cover_every_record_exactly_once() {
+        // Synthetic records with non-contiguous same-prefix runs and a
+        // one-char name (which must key on its single char).
+        let records = vec![
+            Record {
+                name: "ab".into(),
+                elems: vec![String::new(); 3],
+            },
+            Record {
+                name: "ab".into(),
+                elems: vec![String::new(); 2],
+            },
+            Record {
+                name: "ac".into(),
+                elems: vec![String::new(); 4],
+            },
+            Record {
+                name: "ab".into(),
+                elems: vec![String::new(); 5],
+            },
+            Record {
+                name: "a".into(),
+                elems: vec![String::new(); 2],
+            },
+            Record {
+                name: "ab".into(),
+                elems: vec![String::new(); 1],
+            },
+        ];
+        let spans = leading_segment_spans(&records);
+        assert_eq!(spans["ab"], vec![(0, 5), (9, 14), (16, 17)]);
+        assert_eq!(spans["ac"], vec![(5, 9)]);
+        assert_eq!(spans["a"], vec![(14, 16)]);
+        // No overlap: every flat index is inside at most one span.
+        let mut ranges: Vec<(usize, usize)> = spans.values().flatten().copied().collect();
+        ranges.sort_unstable();
+        for w in ranges.windows(2) {
+            assert!(
+                w[0].1 <= w[1].0,
+                "spans overlap or cross: {:?}",
+                (w[0], w[1])
+            );
+        }
+        // Every record covered by exactly one span of its own prefix, at its
+        // exact flat position (index 0 = first record's first element).
+        let mut covered: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+        let mut flat = 0;
+        for r in &records {
+            let key: String = r.name.chars().take(2).collect();
+            let end = flat + r.elems.len();
+            let ss = spans.get(&key).expect("bucket key present");
+            let hits = ss
+                .iter()
+                .filter(|(a, b)| *a <= flat && end <= *b)
+                .count();
+            assert_eq!(
+                hits, 1,
+                "record {:?} at flat {}..{} must be inside exactly one span of its own prefix",
+                r.name, flat, end
+            );
+            *covered.entry((flat, end)).or_insert(0) += 1;
+            flat = end;
+        }
+        assert!(
+            covered.values().all(|&c| c == 1),
+            "each record range must be covered exactly once"
+        );
+    }
+
+    #[test]
+    fn b_emission_has_no_duplicate_keys() {
+        let ds = crate::default_design_system();
+        let patterns = PatternTable::from_design_system(&ds);
+        let classes: Vec<String> = vec!["p-2".into(), "block".into()];
+        let t = ConflictTable::from_classes_seeded(&ds, &classes, None, patterns.family_names.clone());
+        let js = generate_js(
+            &t,
+            Some(&patterns),
+            &GenerateOptions {
+                prefix: None,
+                patterns: true,
+            },
+        );
+        // B: exactly one emitted key per prefix (duplicate object-literal
+        // keys would collapse with only the LAST span surviving).
+        let b_start = js.find("const BI=").expect("BI emitted");
+        let b_end = js[b_start..].find("});\n").expect("BI terminates") + b_start;
+        let body = &js[b_start + "const BI=Object.assign(Object.create(null),{".len()..b_end];
+        let keys: Vec<&str> = body
+            .split(',')
+            .filter(|s| s.ends_with(":["))
+            .map(|s| s.split(':').next().unwrap())
+            .collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            keys.len(),
+            "duplicate B keys in emission: {:?}",
+            keys
+        );
     }
 }

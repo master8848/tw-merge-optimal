@@ -24,13 +24,13 @@ classes).
 
 | Workload | tailwind-merge | optimal (patterns) | optimal (exact) | ratio |
 |---|---|---|---|---|
-| simple (2 classes, both caches warm) | 540k ops/s | 516k ops/s | 513k ops/s | ~parity (tw 1.05×) |
-| heavy (real-world 10-arg call, caches warm) | 381k ops/s | 366k ops/s | 368k ops/s | ~parity (tw 1.04×) |
-| corpus (349 cases, caches warm) | 57k ops/s | 52k ops/s | 51k ops/s | ~parity (tw 1.10×) |
-| collection ×1,322 (tw cache off) | 108 ops/s | 1,219 ops/s | 1,248 ops/s | **11.3×** (optimal) |
-| ultra-long list (2,400 classes, tw cache off) | 1,459 ops/s | 13,319 ops/s | 13,170 ops/s | **9.1×** (optimal) |
-| collection ×1,322 (tw cache on) | 1,343 ops/s | 1,219 ops/s | 1,248 ops/s | ~parity (tw 1.10×) |
-| ultra-long list (2,400 classes, tw cache on) | 18,294 ops/s | 13,319 ops/s | 13,170 ops/s | ~parity (tw 1.37×) |
+| simple (2 classes, both caches warm) | 552k ops/s | 526k ops/s | 536k ops/s | ~parity (tw 1.05×) |
+| heavy (real-world 10-arg call, caches warm) | 390k ops/s | 382k ops/s | 387k ops/s | ~parity (tw 1.02×) |
+| corpus (349 cases, caches warm) | 59k ops/s | 58k ops/s | 58k ops/s | ~parity (tw 1.02×) |
+| collection ×1,322 (tw cache off) | 109 ops/s | 1,358 ops/s | 1,325 ops/s | **12.4×** (optimal) |
+| ultra-long list (2,400 classes, tw cache off) | 1,488 ops/s | 18,488 ops/s | 18,558 ops/s | **12.4×** (optimal) |
+| collection ×1,322 (tw cache on) | 1,366 ops/s | 1,358 ops/s | 1,325 ops/s | ~parity (tw 1.01×) |
+| ultra-long list (2,400 classes, tw cache on) | 18,701 ops/s | 18,488 ops/s | 18,558 ops/s | ~parity (tw 1.01×) |
 
 Run twice with identical results (±0.15–0.8% relative margin of error per row); patterns
 vs exact differs by < 0.3%.
@@ -42,11 +42,10 @@ vs exact differs by < 0.3%.
   (1.02–1.15×); the ratios flip run to run. The old "134×/110×/200×" claims are
   retracted — they measured tailwind-merge constructing a fresh instance (config +
   parser build) inside every measured call.
-- **tw-merge-optimal wins 9–11× only where tailwind-merge's result cache can't help**
+- **tw-merge-optimal wins ~12× only where tailwind-merge's result cache can't help**
   (cache disabled, or thrashing on long/dynamic inputs): its cache is always-on and
   holds 8,192 entries; tailwind-merge's is LRU-500 (v3 default) and opt-in-offable.
-  (Earlier runs measured up to 13× on the collection workload; the latest clean run:
-  11.3×.)
+  (Latest clean run: 12.4× on both the collection and ultra-long workloads.)
 - **Patterns and exact modes are performance-identical** — exact mode costs nothing
   but coverage (see [size.md](size.md)).
 - **One-time init (not per-call):** tailwind-merge pays a lazy init of ~1–8 ms
@@ -96,18 +95,21 @@ node bench/verify.mjs
   token directly (whitespace = char codes ≤ 32), replacing the old `split(/\s+/)` array
   (the `trim()` copy is folded into the scan for the ≥7-char path).
 - `seen` (the conflict-key set) is **allocated lazily** — calls with no Tailwind classes
-  never allocate it.
+  never allocate it; calls with >64 distinct conflict keys promote it to a `Set`.
 - `G` is a **prototype-less object** so the hot path uses the fast `in` operator.
 - Parse results are **memoized per class string** (`PC`) — the same trick as
   tailwind-merge's `cachedParseClassName`; bounded at 8,192 entries and cleared when
   exceeded, capping memory on long-lived apps with dynamic class strings.
 - **Whole-call result cache** (`RC`): results memoized per input string — always on,
   bounded at 8,192 entries. React renders repeat identical class strings constantly, so
-  repeated calls collapse to a single `Map.get` (tailwind-merge's configurable
+  repeated calls collapse to a single object lookup (tailwind-merge's configurable
   cacheSize, without the configuration).
 - **Pattern fallback by default**: the bundle embeds the design system's full grammar;
   classes the scanner missed resolve at runtime via the `m()` matcher — the O(1) `G`
-  table stays the hot path, patterns only run on miss.
+  table stays the hot path, patterns only run on miss. `m()` is indexed by a
+  **leading-segment bucket map** (`BI`, pattern-name prefix → flat span ranges into the
+  pattern table), so a missed class scans a handful of records instead of the full
+  grammar.
 - Conflict tracking uses a **plain array + `includes`** instead of a `Set` — faster for
   the tiny per-family conflict lists.
 - Modifier sorting is order-sensitive with anchor variants and never allocates unless
