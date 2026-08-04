@@ -44,11 +44,11 @@ pub fn generate_js(patterns: &PatternTable, opts: &GenerateOptions) -> String {
     // wholesale clears — the hot working set stays hot on long-lived apps.
     if overlay {
         js.push_str(
-            "let CS=8192;export function setCacheSize(n){CS=n>0?n|0:0;PC=new Map()}\n",
+            "let CS=8192;export function setCacheSize(n){CS=n>0?n|0:0;PC1=Object.create(null);PC2=Object.create(null);PCN=0}\n",
         );
     } else {
         js.push_str(
-            "let CS=8192;export function setCacheSize(n){CS=n>0?n|0:0;PC=new Map();RC=new Map()}\n",
+            "let CS=8192;export function setCacheSize(n){CS=n>0?n|0:0;PC1=Object.create(null);PC2=Object.create(null);PCN=0;RC1=Object.create(null);RC2=Object.create(null);RCN=0}\n",
         );
     }
 
@@ -339,8 +339,18 @@ fn js_key(s: &str) -> String {
 /// applies; class names repeat heavily in practice) in the LRU `PC` bounded at
 /// `CS` entries. Result array: `[important, modifiers, base, postfix_present,
 /// external, postfix_part]`.
+///
+/// `PC` is a two-generation object LRU: the key is a property of a
+/// null-prototype object (never a `Map` — a hit is a single property read,
+/// ~2-3× cheaper than `Map.get` on the hot path). A miss promoted from the
+/// previous generation re-inserts into the current one; at the bound the whole
+/// current generation becomes the previous generation and a fresh object takes
+/// its place — amortized O(1) eviction with zero per-entry deletion and no
+/// `Map.keys()`-while-deleting (a V8 pathology at capacity). The previous
+/// generation keeps the evicted set addressable for one more generation, so a
+/// hot set slightly larger than `CS` still hits.
 const PARSE_JS: &str = r#"
-let PC=new Map();function p(c){let r=PC.get(c);if(r!==undefined){PC.delete(c);PC.set(c,r);return r}if(typeof PREFIX!=='undefined'){const f=PREFIX+':';if(!c.startsWith(f)){r=[0,[],c,0,1,0];if(CS)PC.set(c,r);return r}c=c.slice(f.length)}const m=[];let bs=0,ps=0,ms=0,pp=-1;for(let i=0;i<c.length;i++){const ch=c[i];if(bs===0&&ps===0){if(ch===':'){m.push(c.slice(ms,i));ms=i+1;continue}if(ch==='/'&&pp<0)pp=i}if(ch==='[')bs++;else if(ch===']')bs--;else if(ch==='(')ps++;else if(ch===')')ps--}let b=ms===0?c:c.slice(ms);let im=0;if(b.endsWith('!')){b=b.slice(0,-1);im=1}else if(b.startsWith('!')){b=b.slice(1);im=1}let po=0;if(pp>ms){po=1;b=b.slice(0,pp-ms)}r=[im,m,b,po,0,po?c.slice(pp):0];if(CS){if(PC.size>=CS)PC.delete(PC.keys().next().value);PC.set(c,r)}return r}
+let PC1=Object.create(null),PC2=Object.create(null),PCN=0;function p(c){let r=PC1[c];if(r!==undefined)return r;r=PC2[c];if(r!==undefined){PC1[c]=r;if(++PCN>CS){PC2=PC1;PC1=Object.create(null);PCN=0}return r}if(typeof PREFIX!=='undefined'){const f=PREFIX+':';if(!c.startsWith(f)){r=[0,[],c,0,1,0];if(CS){PC1[c]=r;if(++PCN>CS){PC2=PC1;PC1=Object.create(null);PCN=0}}return r}c=c.slice(f.length)}const m=[];let bs=0,ps=0,ms=0,pp=-1;for(let i=0;i<c.length;i++){const ch=c[i];if(bs===0&&ps===0){if(ch===':'){m.push(c.slice(ms,i));ms=i+1;continue}if(ch==='/'&&pp<0)pp=i}if(ch==='[')bs++;else if(ch===']')bs--;else if(ch==='(')ps++;else if(ch===')')ps--}let b=ms===0?c:c.slice(ms);let im=0;if(b.endsWith('!')){b=b.slice(0,-1);im=1}else if(b.startsWith('!')){b=b.slice(1);im=1}let po=0;if(pp>ms){po=1;b=b.slice(0,pp-ms)}r=[im,m,b,po,0,po?c.slice(pp):0];if(CS){PC1[c]=r;if(++PCN>CS){PC2=PC1;PC1=Object.create(null);PCN=0}}return r}
 "#;
 
 /// Modifier sorting with order-sensitive anchors (port of `sort-modifiers.ts`).
@@ -387,13 +397,21 @@ function toValue(m){if(typeof m==='string')return m;let s='';for(let k=0;k<m.len
 /// Whole-call results are memoized in `RC` (input -> output), the same trick
 /// as tailwind-merge's opt-in result cache — but always on, because renders
 /// (React etc.) repeat identical class strings constantly. `RC` and the
-/// per-class parse memo `PC` are Map-based LRU caches bounded at `CS` entries
-/// (default 8192, configurable via the exported `setCacheSize(n)`; `0`
-/// disables both): touched on access, oldest evicted at the bound, so the hot
-/// working set stays hot on long-lived apps with dynamic class strings.
+/// per-class parse memo `PC` are two-generation object LRUs bounded at `CS`
+/// entries (default 8192, configurable via the exported `setCacheSize(n)`;
+/// `0` disables both): a warm hit is a single null-prototype property read
+/// plus a defined check — no touch, no bookkeeping, no `Map.get` — and a
+/// miss promoted from the previous generation re-inserts on the spot.
+///
+/// The join builds its key with a rope of string concatenations (the fastest
+/// concat), but hashing a deep rope is O(depth) — a 2,400-class key is a
+/// 4,800-deep rope and re-flattening it on every lookup cost tens of
+/// microseconds, visible on the "ultra-long" row. Keys longer than 1,024
+/// chars are therefore flattened (`slice(0)`, one copy) before the cache
+/// lookup, making every subsequent lookup a flat-string hash.
 fn tw_merge_js(p: &PatternTable, prefix: Option<&str>) -> String {
     let mut js = String::from(
-        "let RC=new Map(),h;export function twMerge(s){h=RC.get(s);if(h!==undefined){RC.delete(s);RC.set(s,h);return h}return M(s)}export function twMergeJoin(...x){if(x.length===1&&typeof x[0]==='string'&&(h=RC.get(x[0]))!==undefined){RC.delete(x[0]);RC.set(x[0],h);return h}let l='';if(x.length===1&&typeof x[0]==='string')l=x[0];else for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){l&&(l+=' ');l+=v}}if((h=RC.get(l))!==undefined){RC.delete(l);RC.set(l,h);return h}return M(l)}function M(l){const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS)RC.set(l,r);return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
+        "let RC1=Object.create(null),RC2=Object.create(null),RCN=0,h;export function twMerge(s){h=RC1[s];if(h!==undefined)return h;h=RC2[s];if(h!==undefined){RC1[s]=h;if(++RCN>CS){RC2=RC1;RC1=Object.create(null);RCN=0}return h}return M(s)}export function twMergeJoin(...x){if(x.length===1&&typeof x[0]==='string'&&(h=RC1[x[0]])!==undefined)return h;let l;if(x.length===1&&typeof x[0]==='string')l=x[0];else{l='';for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){l&&(l+=' ');l+=v}}if(l.length>1024)l=l.slice(0)}h=RC1[l];if(h!==undefined)return h;h=RC2[l];if(h!==undefined){RC1[l]=h;if(++RCN>CS){RC2=RC1;RC1=Object.create(null);RCN=0}return h}return M(l)}function M(l){const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC1[l]=r;if(++RCN>CS){RC2=RC1;RC1=Object.create(null);RCN=0}}return r}let seen=null,o='',st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
     );
     if let Some(pfx) = prefix {
         js.push_str(&format!(
@@ -411,7 +429,7 @@ fn tw_merge_js(p: &PatternTable, prefix: Option<&str>) -> String {
         js.push_str("if(CT!==undefined&&CN!==undefined&&f===CT&&cn(q[2]+q[5]))f=CN,cf=W[CN];");
     }
     js.push_str(
-        "}const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.length>=64)seen=new Set(seen);if(seen&&(seen.add?seen.has(k):seen.includes(k)))continue;const pre=v+(q[0]?'!':'');if(!seen)seen=[];if(seen.add)for(let j=0;j<cf.length;j++)seen.add(pre+cf[j]);else for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}if(CS){if(RC.size>=CS)RC.delete(RC.keys().next().value);RC.set(l,o)}return o}",
+        "}const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.length>=64)seen=new Set(seen);if(seen&&(seen.add?seen.has(k):seen.includes(k)))continue;const pre=v+(q[0]?'!':'');if(!seen)seen=[];if(seen.add)for(let j=0;j<cf.length;j++)seen.add(pre+cf[j]);else for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);o=c+(o?' '+o:'')}if(CS){RC1[l]=o;if(++RCN>CS){RC2=RC1;RC1=Object.create(null);RCN=0}}return o}",
     );
     js
 }
@@ -579,7 +597,7 @@ fn extend_api_js() -> String {
 /// instance-specific).
 fn tw_merge_extend_js(p: &PatternTable, prefix: Option<&str>) -> String {
     let mut js = String::from(
-        "function makeBundle(ov){let RC=new Map(),h;function twMerge(...x){if(x.length===1&&typeof x[0]==='string'&&(h=RC.get(x[0]))!==undefined){RC.delete(x[0]);RC.set(x[0],h);return h}let l='';if(x.length===1&&typeof x[0]==='string')l=x[0];else for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){l&&(l+=' ');l+=v}}if((h=RC.get(l))!==undefined){RC.delete(l);RC.set(l,h);return h}return M(l)}const twMergeJoin=twMerge;function M(l){const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS)RC.set(l,r);return r}let seen=null,o='',oc=0,st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
+        "function makeBundle(ov){let RC1=Object.create(null),RC2=Object.create(null),RCN=0,h;function twMerge(...x){if(x.length===1&&typeof x[0]==='string'&&(h=RC1[x[0]])!==undefined)return h;let l;if(x.length===1&&typeof x[0]==='string')l=x[0];else{l='';for(const a of x)if(a){const v=typeof a==='string'?a:toValue(a);if(v){l&&(l+=' ');l+=v}}if(l.length>1024)l=l.slice(0)}h=RC1[l];if(h!==undefined)return h;h=RC2[l];if(h!==undefined){RC1[l]=h;if(++RCN>CS){RC2=RC1;RC1=Object.create(null);RCN=0}return h}return M(l)}const twMergeJoin=twMerge;function M(l){const t=l.trim();if(t.length<MC){let ws=-1;for(let i=0;i<t.length;i++){if(t.charCodeAt(i)<=32){ws=i;break}}const r=ws<0?t:t.replace(/\\s+/g,' ');if(CS){RC1[l]=r;if(++RCN>CS){RC2=RC1;RC1=Object.create(null);RCN=0}}return r}let seen=null,o='',oc=0,st=t.length;while(st>0){let en=st;while(en>0&&t.charCodeAt(en-1)<=32)en--;let s=en;while(s>0&&t.charCodeAt(s-1)>32)s--;const c=t.slice(s,en);st=s;",
     );
     if let Some(pfx) = prefix {
         js.push_str(&format!(
@@ -597,7 +615,7 @@ fn tw_merge_extend_js(p: &PatternTable, prefix: Option<&str>) -> String {
         js.push_str("if(CT!==undefined&&CN!==undefined&&f===CT&&cn(q[2]+q[5]))f=CN,cf=W[CN];");
     }
     js.push_str(
-        "}const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.length>=64)seen=new Set(seen);if(seen&&(seen.add?seen.has(k):seen.includes(k)))continue;const pre=v+(q[0]?'!':'');if(!seen)seen=[];if(seen.add){for(let j=0;j<cf.length;j++)seen.add(pre+cf[j]);const wf=ov.ow[f];if(wf)for(let j=0;j<wf.length;j++)seen.add(pre+wf[j])}else{for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);const wf=ov.ow[f];if(wf)for(let j=0;j<wf.length;j++)seen.push(pre+wf[j])}o=c+(o?' '+o:'')}if(CS&&!oc){if(RC.size>=CS)RC.delete(RC.keys().next().value);RC.set(l,o)}return o}return twMerge}",
+        "}const v=q[1].length===0?'':q[1].length===1?q[1][0]:sm(q[1]).join(':'),k=v+(q[0]?'!':'')+f;if(seen&&seen.length>=64)seen=new Set(seen);if(seen&&(seen.add?seen.has(k):seen.includes(k)))continue;const pre=v+(q[0]?'!':'');if(!seen)seen=[];if(seen.add){for(let j=0;j<cf.length;j++)seen.add(pre+cf[j]);const wf=ov.ow[f];if(wf)for(let j=0;j<wf.length;j++)seen.add(pre+wf[j])}else{for(let j=0;j<cf.length;j++)seen.push(pre+cf[j]);const wf=ov.ow[f];if(wf)for(let j=0;j<wf.length;j++)seen.push(pre+wf[j])}o=c+(o?' '+o:'')}if(CS&&!oc){RC1[l]=o;if(++RCN>CS){RC2=RC1;RC1=Object.create(null);RCN=0}}return o}return twMerge}",
     );
     js.push_str(
         "const MO={xo:XO,xkw:XKW,xc:XC,ow:OW};const TM=makeBundle(MO);export const twMerge=TM;export const twMergeJoin=TM;\n",

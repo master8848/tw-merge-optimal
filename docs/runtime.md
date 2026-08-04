@@ -57,6 +57,9 @@ exist in the table.
 | `P` | flat array of pattern records (below) |
 | `BI` | leading-segment index: pattern-name prefix (`p`, `te`, …) → span ranges into `P` (`[[start,end],…]`), so a matcher run scans a handful of records instead of the whole grammar |
 
+`PR` and `BI` are **prototype-less objects** (`Object.assign(Object.create(null), …)`),
+so no inherited key (e.g. `toString`) can ever collide with a lookup.
+
 ### `P` — pattern records
 
 `P` is a flat array; each alternative is one record:
@@ -194,10 +197,18 @@ setCacheSize(0)     // disable both caches — every merge recomputes
 setCacheSize(8192)  // default
 ```
 
-Both maps are true LRUs: a hit **touches** the entry (delete + re-insert,
-which also keeps V8's Map iteration order stable), and an insert past the
-bound evicts the **oldest** entry (`Map.keys().next().value`) — no wholesale
-clear, so hot entries survive churn.
+Both caches are **two-generation object LRUs** — the key is a property of a
+null-prototype object (`Object.create(null)`), never a `Map`: a warm hit is a
+single property read, ~2-3× cheaper than `Map.get`. There is no touch on a
+main-cache hit (zero bookkeeping on the hot path); a hit in the previous
+generation re-inserts into the current one on the spot. An insert past the
+bound **swaps generations**: the current object becomes the previous one and a
+fresh object takes its place — amortized O(1) eviction with no per-entry
+deletion and no `Map.keys()`-while-deleting (a V8 pathology that turns
+capacity inserts into table-growth copies at ~3 µs each). The previous
+generation keeps the evicted set addressable for one more generation, so a
+hot set slightly larger than `CS` still hits. No wholesale clear: hot entries
+survive churn and steady-state allocation is zero.
 
 `setCacheSize` clamps negatives to `0`, clears both maps, and `0` leaves the
 maps permanently empty (memory stays flat, correctness unchanged — the
