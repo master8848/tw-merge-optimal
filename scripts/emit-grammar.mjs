@@ -1,7 +1,7 @@
-// emit-grammar.mjs — derive the class->family (G) and family->conflict (W)
-// tables for the tw-merge-optimal "exact" bundle directly from the REAL
-// Tailwind compiler (v4.3.3+), instead of the hand-maintained vendor CSS
-// catalog + hand-written Rust tables in crates/twm-core/src/families.rs.
+// emit-grammar.mjs — derive the family->conflict (W) table for the
+// tw-merge-optimal matcher-only bundle directly from the REAL Tailwind
+// compiler (v4.3.3+), instead of the hand-maintained vendor CSS catalog +
+// hand-written Rust tables in crates/twm-core/src/families.rs.
 //
 // Usage (needs bun; imports the Tailwind TS source directly):
 //   bun scripts/emit-grammar.mjs --out /tmp/derived.mjs
@@ -13,6 +13,14 @@
 //   --classes PATH   use a JSON array of class tokens instead of parsing the Rust files
 //   --tailwind DIR   path to the tailwindcss package dir (default: ../tailwindcss/packages/tailwindcss
 //                    relative to the repo root; env TAILWIND_PKG also honored)
+//
+// The derived W replaces the generated one (the matcher bundle's 'const W='
+// line, swapped in place). Note: the derived family numbering follows this
+// script's own derivation order (first-seen signature), so the swapped W is
+// self-consistent with the derived family ids in --meta — the matcher
+// records (P), arbitrary-property map (PR) and postfix-special ids (LD/FS/
+// CT/CN) keep the Rust generator's numbering. The point of the script is the
+// derivation itself: families + conflicts straight from the real compiler.
 //
 // The class list default = union of the corpus tokens (corpus_data.rs), the
 // tailwind-merge benchmark collection (bench/tw-merge-benchmark-data.json) and
@@ -287,15 +295,6 @@ const familyId = (sig) => {
   return id
 }
 
-const G = {} // base -> family id
-const GOrder = [] // insertion order for stable output
-const setG = (key, fam) => {
-  if (G[key] === undefined) {
-    G[key] = fam
-    GOrder.push(key)
-  }
-}
-
 const fullByBase = new Map()
 for (const t of postfixTokens) {
   const b = baseOf(t)
@@ -312,19 +311,11 @@ for (const base of bases) {
     sig = fullSigs[0]
   }
   if (!sig) continue
-  const baseFam = familyId(sig)
-  setG(base, baseFam)
-  // Postfix key (`text-lg/7` -> G['text-lg/']) only when the postfix changes
-  // the family; the merge loop falls back to G[base] otherwise.
-  for (const fsig of fullSigs) {
-    const ffam = familyId(fsig)
-    if (ffam !== baseFam) setG(`${base}/`, ffam)
-  }
-  // Arbitrary fallback: `p-[10px]` -> G['p-arb']
-  if (/[\[(]/.test(base)) {
-    const ai = base.search(/[\[(]/)
-    if (ai > 0) setG(`${base.slice(0, ai)}arb`, baseFam)
-  }
+  // Register the base's family (and the postfix forms' families) so the
+  // derived W covers them. (The old G entries for postfix keys and
+  // arbitrary fallbacks are gone — matcher mode has no G.)
+  familyId(sig)
+  for (const fsig of fullSigs) familyId(fsig)
 }
 
 const N = familySigs.length
@@ -348,26 +339,20 @@ const W = Array.from({ length: N }, (_, f) => {
 })
 
 // ---------------------------------------------------------------------------
-// 4. Emit the derived bundle (same shape/runtime as the exact bundle)
+// 4. Emit the derived bundle (same shape/runtime as the matcher-only bundle)
 // ---------------------------------------------------------------------------
 
-const exact = readFileSync(join(REPO, 'bench/generated/tw-merge-optimal-exact.mjs'), 'utf8')
-const lines = exact.split('\n')
-const gIdx = lines.findIndex((l) => l.startsWith('const G='))
+const bundle = readFileSync(join(REPO, 'bench/generated/tw-merge-optimal.mjs'), 'utf8')
+const lines = bundle.split('\n')
 const wIdx = lines.findIndex((l) => l.startsWith('const W='))
-if (gIdx === -1 || wIdx === -1) {
-  throw new Error('could not locate G/W lines in the exact bundle')
+if (wIdx === -1) {
+  throw new Error('could not locate the W line in the matcher-only bundle')
 }
 
 const version = JSON.parse(readFileSync(join(TAILWIND_PKG, 'package.json'), 'utf8')).version
-const gJson = Object.keys(G)
-  .sort()
-  .map((k) => `${JSON.stringify(k)}:${G[k]}`)
-  .join(',')
 const wJson = W.map((a) => `[${a.join(',')}]`).join(',')
 
 lines[0] = `// Derived by scripts/emit-grammar.mjs from tailwindcss v${version} (${TAILWIND_PKG}). Do not edit.`
-lines[gIdx] = `const G=Object.assign(Object.create(null),{${gJson}});`
 lines[wIdx] = `const W=[${wJson}];`
 
 writeFileSync(OUT, lines.join('\n'))
@@ -379,7 +364,6 @@ const meta = {
   compileList: compileList.length,
   unresolved: unresolved,
   families: N,
-  gEntries: Object.keys(G).length,
   wTotal: W.reduce((a, b) => a + b.length, 0),
   familySigs: familySigs.map((s) => [...s]),
   out: OUT,

@@ -3,20 +3,17 @@
 ```
 twm-gen v0.1 — build-time Tailwind class-merge generator
 
-usage: twm-gen [--css <file>] [--config <file>] [--out <file>] [--prefix <p>] [--extend]
-               [--no-patterns] [--check] <globs-or-paths...>
+usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--config <file>] [--extend]
+               [--check] <globs-or-paths...>
 
 options:
   --css <file>    extra @utility/@theme CSS to extend the design system
   --config <file> tailwind-merge-style plugin config JSON (classGroups /
-                  conflictingClassGroups) merged into the design system
+                   conflictingClassGroups) merged into the design system
   --out <file>    write the generated JS bundle to <file> (default: stdout)
   --prefix <p>    only treat classes with the `p:` prefix as Tailwind classes
   --extend        emit the runtime extend API (extendTailwindMerge, validators,
-                  ...) plus the overlay machinery for runtime configs
-  --no-patterns   emit only the scanned classes (smaller bundle; classes the
-                  scanner missed pass through unmerged — default is full
-                  pattern-table resolution, so unseen classes still merge)
+                   ...) plus the overlay machinery for runtime configs
   --check         report conflicts among used classes; exit 1 if any exist
   -h, --help      show this help
 ```
@@ -25,11 +22,13 @@ Arguments are files, directories (recursively walked for source extensions) or g
 Candidates are extracted with `tailwindcss-oxide` (`pre_process_input` by extension +
 `Extractor`), so they match what your Tailwind build would see.
 
-Pattern resolution is **on by default**: the bundle embeds the whole design
-system's grammar (utility names, value specs, theme sets), so classes the
-scanner never saw — runtime-composed strings, CMS content, arbitrary values —
-still resolve like tailwind-merge would. `--no-patterns` trades that safety
-net for the smallest possible bundle.
+There is **one** output mode — matcher-only: the bundle embeds the design
+system's grammar **guarded to the families your scan uses** (plus the
+conflict-edge closure and the postfix specials `leading`/`container-named`),
+and resolves every class at runtime through the pattern matcher, exactly like
+tailwind-merge's heuristics. The scanned classes decide *which* grammar
+ships; the smaller and more specialized the project, the smaller the bundle
+(see [size.md](size.md)).
 
 ## Examples
 
@@ -37,7 +36,7 @@ Generate a bundle for your sources:
 
 ```sh
 $ twm-gen --out src/tw-merge.mjs app/**/*.{html,js,tsx}
-twm-gen: 42 files scanned, 137 unique candidates, wrote src/tw-merge.mjs (5218 bytes)
+twm-gen: 42 files scanned, 137 unique candidates, 18 families, wrote src/tw-merge.mjs (5218 bytes)
 ```
 
 Use it from JS:
@@ -158,27 +157,33 @@ unit-ful values, so it resolves `rtl.ps`.
 `createTailwindMerge`, `mergeConfigs` and the tagged `validators` — plus the
 overlay machinery, so configs can also be passed at runtime (see
 [runtime.md](runtime.md#the-runtime-config-api-extend)). The bundle then pays
-the overlay machinery on top of the plain patterns bundle (~5 KB raw; see
-[size.md](size.md)). `--config` and `--extend` can be combined.
+the overlay machinery on top of the plain guarded bundle (~5.6 KB raw; see
+[size.md](size.md)). `--config` and `--extend` can be combined; build-time
+plugin configs compile straight into the pattern table, and the runtime
+overlay tables (`XO`/`XKW`/`XC`/`OW`) stay empty.
 
-## Modes
+## Family guard
 
-`twm-gen` has two output modes, selected per invocation:
+Every bundle `twm-gen` emits is **family-guarded**: the scanned classes'
+conflict-table families decide which design-system grammar ships.
 
-| | **Patterns** (default) | **Exact** (`--no-patterns`) |
-|---|---|---|
-| What's in the bundle | Scanned classes **+ the full design-system grammar** (every utility name, value spec, theme set, keyword) | Only the scanned classes |
-| Unseen classes | Resolved at runtime via the `m()` matcher — runtime-composed strings, CMS content, arbitrary values all merge correctly | Pass through unmerged (the safe direction) |
-| Bundle size | 65.7 KB raw (~18.7 KB gzip) for the full grammar, independent of project size — see [size.md](size.md) | 3.8 KB small sample, ~15.5 KB corpus union, ~20.6 KB bench union (962 classes) |
-| Runtime | O(1) `G`/`W` table lookups; patterns only run on a table miss | O(1) table lookups only |
-| When to use | Default. Any project with dynamic class strings | Smallest bundle possible; every class is statically known and regeneration is wired into CI |
+- The guard covers the families of all scanned classes **plus the
+  conflict-edge closure** (a class that conflicts with a side family is
+  itself in the family list) **plus the postfix specials** (`font-size`
+  pulls in `leading`, `container-type` pulls in `container-named`).
+- Classes the scanner never saw still resolve at runtime — **but only into
+  families the scan used**. A class from an entirely unused family (e.g. a
+  brand-new `grid-cols-*` class in a project that never scanned one) passes
+  through unmerged, the safe direction — tailwind-merge can't merge it with
+  anything anyway, because nothing that conflicts with it was scanned
+  either.
+- Regeneration is cheap, so a class change just re-runs the generator (the
+  bundler plugins do it on every build).
 
-Both modes produce **byte-identical results for every class the exact mode
-knows** — patterns mode is a strict superset. The generated runtime is
-identical in structure; the exact bundle omits the pattern tables (`FN`,
-`PR`, `W2`, `TH`, `KW`, `P`) and the `D` flag. See
-[runtime.md](runtime.md#mode-comparison) for the full breakdown of the
-generated code, flags and control flow.
+The checked-in no-bundler bundles (`full.mjs`, the `./pattern` sub-import)
+embed the **full, unguarded** grammar instead — no scan at all, every class
+the design system knows resolves. Both shapes run the same matcher-only
+runtime (see [runtime.md](runtime.md#bundler-bundles-vs-no-bundler-bundles)).
 
 The pipeline itself (scan → parse → resolve → group → conflict → generate) is
 documented in [architecture.md](architecture.md).

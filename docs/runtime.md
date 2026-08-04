@@ -2,82 +2,60 @@
 
 `twm-gen` emits a **dependency-free ESM module** — pure browser-ready
 JavaScript with no imports, no Node APIs, no WASM. This document explains
-every part of the generated code: the tables, the flags, and the exact
+every part of the generated code: the tables, the matcher, and the exact
 control flow of `twMerge`.
 
-A generated bundle looks like this (annotated):
+There is **one** runtime design: a matcher-only bundle. Every class —
+scanned or not — resolves through the pattern matcher `m()`. A generated
+bundle looks like this (annotated):
 
 ```js
 // header comment
-const A=0,B=0,C=1,D=1;        // feature flags
-const G={...};                 // class -> family id
-const W=[[...],[...]];         // family id -> conflict ids
-const FN=[...];                // family names            (patterns mode)
-const PR={...};                // CSS property -> family  (patterns mode)
-const W2=[[...]];              // deduped conflict sets   (patterns mode)
-const TH=[...];                // theme sets              (patterns mode)
-const KW="...";                // keywords                (patterns mode)
-const P=[...];                 // pattern records         (patterns mode)
-const LD=...,FS=...;           // postfix-special ids     (patterns mode, only if present)
-const PC=new Map();            // parse memo
-function p(c){...}             // parse class
-const OS=new Set([...]);       // order-sensitive modifiers
-function sm(x){...}            // sort modifiers
-function twJoin(...x){...}     // clsx-style join
-const RC=new Map();            // result memo
-let CS=8192; export function setCacheSize(n){...} // cache bound (0 = off)
-const MC=7;                    // short-input fast-path threshold (exact mode: table-derived)
-function m(v){...}             // pattern matcher         (patterns mode)
-const THS=[]; function th(i){...} // lazy theme sets      (patterns mode)
-export function twMerge(...x){...}
+const MC=7;                        // short-input fast-path threshold (constant)
+let CS=8192;export function setCacheSize(n){...} // cache bound (0 = off)
+const W=[...];                     // family id -> conflict ids
+const FN=[...];                    // family names
+const PR={...};                    // CSS property -> family
+const W2=[...];                    // deduped conflict sets
+const TH=[...];                    // theme sets
+const KW="...";                    // keywords
+const P=[...];                     // pattern records (flat array)
+const BI={...};                    // leading-segment index into P
+const LD=...,FS=...,CT=...,CN=...; // postfix-special ids (only if present)
+const THS=[];function th(i){...}   // lazy theme sets
+let K;function kws(){...}          // lazy keywords
+function cn(v){...}                // named-container check
+function m(v){...}                 // pattern matcher
+let PC=new Map();                  // per-class parse memo (LRU)
+function p(c){...}                 // parse class
+const OS=new Set([...]);           // order-sensitive modifiers
+function sm(x){...}                // sort modifiers
+export function twJoin(...x){...}  // clsx-style join
+function toValue(m){...}
+let RC=new Map();                  // whole-call result memo (LRU)
+export function twMerge(s){...}    // single string
+export function twMergeJoin(...x){...} // variadic
+function M(l){...}                 // merge body (shared)
 ```
 
-## Feature flags
-
-```
-const A = needs_postfix   — any scanned class has a /postfix (text-lg/7, @container/x)
-const B = needs_important — any scanned class carries !
-const C = needs_fallback  — any scanned class is an arbitrary value (p-[10px])
-const D = 1               — patterns mode (always 1 in patterns bundles; absent in exact)
-```
-
-Each flag gates the corresponding code path so a project that never uses
-`!` or `/` postfixes ships without that machinery.
+There are **no feature flags** (`A`/`B`/`C`/`D` are gone) and **no `G`
+table**: postfix, important and arbitrary values are always parsed, and every
+class goes through the matcher. The only "optional" pieces are the
+postfix-special ids (`LD`/`FS`/`CT`/`CN`), emitted only when those families
+exist in the table.
 
 ## Tables
 
-### `G` — class → family id
-
-Prototype-less object (`Object.create(null)`) mapping class base names to
-their family id. Three kinds of keys:
-
-| Key | Meaning | Example |
-|---|---|---|
-| `p-2` | exact class base | `G['p-2']` → family of padding |
-| `text-lg/` | postfix variant (only when the postfix changes the conflict set) | `G['text-lg/']` → font-size family, extra leading conflict |
-| `p-arb` | arbitrary-value fallback prefix | `G['p-arb']` → so `p-[13px]` resolves without the scanner having seen it |
-
-`G` is a prototype-less object so the hot path can use the fast
-`key in G` operator — no `hasOwnProperty` call, and no inherited-key
-false positives.
-
-### `W` — family id → conflict ids
-
-`W[f]` is the sorted list of family ids class-family `f` conflicts with (own
-family first). In exact mode it is built from the scanned classes only; in
-patterns mode it is the pattern table's full per-family conflict union, so
-unseen classes conflict correctly too.
-
-### Patterns-mode tables
-
 | Table | Content |
 |---|---|
+| `W` | family id → conflict ids (own family first). Covers exactly the families of the project's table — the *guarded* family list in bundler bundles, the full design system's family list in no-bundler bundles. |
 | `FN` | family id → family name (JSON strings) |
 | `PR` | CSS property → family id, for arbitrary properties (`[padding:1rem]` → padding family) — this is how arbitrary properties merge with the standard classes they write |
-| `W2` | deduplicated conflict sets (`W2[wid]` is the conflict list referenced by a pattern) |
+| `W2` | deduplicated conflict sets (`W2[wid]` is the conflict list referenced by a pattern record) |
 | `TH` | theme sets, each set comma-joined into one string (`th(i)` lazily `split(',')` into a `Set`) |
-| `KW` | all keywords comma-joined (keywords contain no commas) |
+| `KW` | all keywords comma-joined (keywords contain no commas; `kws()` lazily splits once) |
 | `P` | flat array of pattern records (below) |
+| `BI` | leading-segment index: pattern-name prefix (`p`, `te`, …) → span ranges into `P` (`[[start,end],…]`), so a matcher run scans a handful of records instead of the whole grammar |
 
 ### `P` — pattern records
 
@@ -102,28 +80,34 @@ all groups must match. Spec codes encode alternatives:
 
 ### Postfix-special ids
 
-Emitted only when those families exist in the design system:
-`LD` (leading), `FS` (font-size), `CT` (container-type), `CN`
-(container-named). They implement the two postfix special cases:
-`text-lg/7` also conflicts with `leading-*`, and `@container/[name]`
-resolves to the named-container family.
+Emitted only when those families exist in the table: `LD` (leading), `FS`
+(font-size), `CT` (container-type), `CN` (container-named). They implement the
+two postfix special cases — always on when present:
+
+- `text-lg/7` resolves to the font-size family **plus** a conflict with
+  `leading-*` (`FS`/`LD`),
+- `@container/[name]` resolves to the named-container family (`CT`/`CN`,
+  checked with `cn()`).
+
+The family guard is *closed over* these: `font-size` pulls in `leading`, the
+container families pull in the named-container family, so a guarded bundle
+never emits a dangling `LD`/`FS`/`CT`/`CN` reference.
 
 ## Functions
 
 ### `p(c)` — parse class
 
 Port of `parse-class-name.ts`: splits modifiers (`:`), strips the important
-marker (`!` suffix, or legacy prefix — only when flag `B`), cuts the postfix
-(`/...` — only when flag `A`), and computes the arbitrary fallback prefix
-(`p-` from `p-[10px]` — only when flag `C`). With a `PREFIX`, non-matching
-classes are marked external (`ext=1`) and pass through untouched.
+marker (`!` suffix, or legacy prefix), cuts the postfix (`/...`), and keeps
+the raw postfix part. **Postfix and important are always parsed** — there are
+no flags gating them. With a `PREFIX`, non-matching classes are marked
+external (`ext=1`) and pass through untouched.
 
-Result array: `[important, modifiers, base, postfix_present, arb_prefix, ext]`
-(patterns mode adds `pf` — the raw postfix part, needed for named containers).
+Result array: `[important, modifiers, base, postfix_present, ext, postfix_full]`.
 
-Results are memoized in `PC` (bounded by `setCacheSize`, default 8192,
-cleared wholesale when exceeded) — class names repeat heavily in real
-renders.
+Results are memoized in `PC`, an **LRU Map** (touch-on-get, evict-oldest at
+the bound) sized by `setCacheSize` (default 8192, `0` disables) — class names
+repeat heavily in real renders.
 
 ### `sm(x)` — sort modifiers
 
@@ -136,19 +120,20 @@ therefore merge.
 
 Concatenates strings and nested arrays, skipping falsy values, space-separated.
 
-### `m(v)` — pattern matcher (patterns mode)
+### `m(v)` — pattern matcher
 
-Resolves an **unseen** class against `P`:
+Resolves a class against `P` — this is the **only** resolution path:
 
 1. arbitrary values: `[prop:value]` → family via `PR` (merges with standard
    classes); other `[...]` → `arbitrary..` family;
 2. `-` prefix (negative values) stripped;
-3. linear scan over `P`: exact match (static) or prefix match (wildcard);
-   validate each group against the spec codes (`th` for theme sets, `kws`
-   for keywords, `VT` for types);
-4. returns `[family_id, conflict_ids]` or `0` when nothing matches.
-
-Only runs on a `G` miss, so the O(1) table stays the hot path.
+3. `BI` leading-segment lookup — the two-char prefix of the class name maps
+   to a handful of span ranges into `P`, so the scan is over a few records,
+   not the full grammar;
+4. exact match (static) or prefix match (wildcard); validate each group
+   against the spec codes (`th` for theme sets, `kws` for keywords, `VT` for
+   types);
+5. returns `[family_id, conflict_ids]` or `0` when nothing matches.
 
 ### `twMerge(s)` / `twMergeJoin(...x)` — the merge loop
 
@@ -158,46 +143,44 @@ Both entries share one merge body (`M`) and one result memo (`RC`):
 1. twMerge:  RC memo lookup on the raw string — no join, no arg handling
    twMergeJoin: l = join arguments (strings + nested arrays, falsy skipped,
    inlined string-first loop) — the tailwind-merge-compatible variadic shape
-2. RC memo: if the input was merged before, return the cached string (always
-   on, bounded by setCacheSize, default 8192, cleared when exceeded)
+2. RC memo: if the input was merged before, return the cached string (LRU
+   Map, touch-on-get, evict-oldest at the bound, setCacheSize default 8192)
 3. t = l.trim()
 4. short-input fast path: t.length < MC → collapse whitespace, done
-   (MC is generated at build time: the project's shortest pair that the
-   merge can change — a conflicting pair OR a duplicate pair. Patterns
-   mode keeps the default-grammar floor 7, because the matcher can still
-   resolve unseen classes; exact mode computes it from the table)
+   (MC is the constant 7 — no class pair shorter than 7 chars can conflict)
 5. tokenize right-to-left via charCode scan (whitespace = char codes ≤ 32),
    no split() array allocated
 6. for each class (right-to-left, last wins):
      q = p(c)
-     if external (q[5]) or not in G/m → keep, continue
-     (in prefixed bundles, tokens not carrying the prefix are emitted
-     without even parsing — they can never be Tailwind classes)
-     f = G lookup, in order:
-         postfix variant  (A && q[3] && 'base/' in G)
-         exact base       (base in G)
-         arb fallback     (C && q[4] && 'p-arb' in G)
-         pattern match    (D && m(base))   ← patterns mode only
+     if external (q[4]) → keep, continue
+     r = m(q[2])                    ← the matcher, on every class
+     if no match and postfix (q[3]) → r = m(q[2]+q[5])  (full class name,
+        e.g. aspect-8/11, whose base alone doesn't match)
+     if still no match → keep, continue
+     f = r[0], cf = r[1]
+     postfix specials (always on when the ids exist):
+        text-lg/7  → f === FS: add LD to the conflict list
+        @container/[name] → f === CT && cn(...): f = CN, cf = W[CN]
      conflict key k = sorted modifiers + '!' + family
      if k already in seen → drop this class
-     else add pre + every family in W[f] (or the pattern's conflict list)
-          to seen, keep the class
-7. cache the result in RC, return it
+     else add pre + every family in cf to seen, keep the class
+7. cache the result in RC (LRU, as above), return it
 ```
 
 `twMerge` accepts exactly one string — the shape `clsx()`-based `cn()` utils
-produce — so it skips steps 1's rest-arg/array handling entirely. On
+produce — so it skips step 1's rest-arg/array handling entirely. On
 single-string inputs the two are byte-identical; on multi-arg/array inputs
 `twMerge` has nothing to join, so use `twMergeJoin` there (see
 [deviations.md](deviations.md)).
 
-`seen` is a lazily allocated plain array checked with `includes` — faster
-than a `Set` for the tiny per-family conflict lists (the same trick
-tailwind-merge's benchmarked `mergeClassList` uses).
+`seen` is a lazily allocated plain array checked with `includes`, promoted to
+a `Set` past 64 entries — faster than a `Set` for the tiny per-family
+conflict lists (the same trick tailwind-merge's benchmarked `mergeClassList`
+uses).
 
 ## Caches
 
-Two caches, both bounded by the same runtime-configurable size:
+Two caches, both LRU `Map`s bounded by the same runtime-configurable size:
 
 - **`RC`** — whole-call result memo (input string → output). Always on,
   because React-style renders repeat identical class strings constantly.
@@ -211,31 +194,39 @@ setCacheSize(0)     // disable both caches — every merge recomputes
 setCacheSize(8192)  // default
 ```
 
+Both maps are true LRUs: a hit **touches** the entry (delete + re-insert,
+which also keeps V8's Map iteration order stable), and an insert past the
+bound evicts the **oldest** entry (`Map.keys().next().value`) — no wholesale
+clear, so hot entries survive churn.
+
 `setCacheSize` clamps negatives to `0`, clears both maps, and `0` leaves the
 maps permanently empty (memory stays flat, correctness unchanged — the
-corpus is re-verified with caching off). This is tailwind-merge `cacheSize`
+corpus is re-verified with caching off *and* with a tiny 16-entry LRU that
+forces evictions on every insert). This is tailwind-merge `cacheSize`
 parity, minus the config API: the default (8192) beats tailwind-merge's
 LRU-500 because repeated renders hit a larger working set.
 
-## Mode comparison
+## Bundler bundles vs no-bundler bundles
 
-| | Exact (`--no-patterns`) | Patterns (default) |
+Two bundle *shapes* exist, both running this exact runtime — they differ only
+in **which pattern table** ships:
+
+| | Bundler bundles (guarded) | No-bundler bundles (full grammar) |
 |---|---|---|
-| Tables | `G`, `W` | `G`, `W`, `FN`, `PR`, `W2`, `TH`, `KW`, `P` |
-| Unseen classes | pass through unmerged (safe) | resolved by `m()` — full tailwind-merge-style heuristics |
-| Flags | `A`,`B`,`C` | `A`,`B`,`C`,`D` |
-| Bundle size | exact only (3.8 KB sample, ~15.5 KB corpus union, ~20.6 KB bench union) | full design-system grammar (65.7 KB raw / 18.7 KB gzip) |
-| Correctness guarantee | scanned classes only | entire design system |
+| Table source | `PatternTable::from_design_system_guarded` — only the families a project's scan uses (+ the conflict-edge closure) | `PatternTable::from_design_system` — the entire design-system grammar |
+| Produced by | `twm-gen` / the bundler plugins (`tw-merge-optimal` main import, `full.mjs`, `generated.mjs`) | the checked-in prebuilt bundles (`tw-merge-optimal/pattern` sub-import, `full.mjs` before regeneration) |
+| Unseen classes | resolve via `m()` **only if** their family was scanned; worst case (a family the scan never saw) they pass through unmerged — the safe direction | resolve via `m()` with the full tailwind-merge-style heuristics |
+| Bundle size | family-guarded — small projects ~13.7 KB raw, bench scale 41.9 KB raw / 12.4 KB gzip | the full-grammar floor, ~52 KB raw (see [size.md](size.md)) |
 
-Both modes produce **byte-identical output** on every class the exact mode
-resolved; `tests/js_parity.rs` verifies both bundles against the full
-349-case corpus, and `bench/verify.mjs` re-checks all cases with a rotated
-loop (guarding against V8 constant-folding).
+Both shapes verify against the full 349-case corpus: `tests/js_parity.rs`
+runs the corpus against the guarded corpus-union bundle, and
+`bench/verify.mjs` re-checks all cases with a rotated loop (guarding against
+V8 constant-folding).
 
 ## The runtime config API (`/extend`)
 
-The `tw-merge-optimal/extend` sub-import ships the patterns bundle plus the
-**overlay machinery** (`m2`, `makeBundle`) and the runtime config API, so
+The `tw-merge-optimal/extend` sub-import ships the same matcher bundle plus
+the **overlay machinery** (`m2`, `makeBundle`) and the runtime config API, so
 plugin configs can be supplied at runtime instead of build time:
 
 ```js
@@ -301,10 +292,12 @@ same policy as the build-time `--config` path.
 
 Exactly tailwind-merge's: processing is right-to-left, the last class wins,
 and `conflictingClassGroups` A → [B, ...] means a *later* A-class removes
-*preceding* B-classes. Overlay families can both kill and be killed:
-compiled→overlay edges are stored in the module `OW` table, overlay→compiled
-and overlay→overlay edges in the per-instance `XC` rows; unknown edge
-targets are dead edges (no error).
+*preceding* B-classes. Overlay families can both kill and be killed. The
+overlay tables (`XO` overlay pattern records, `XKW` overlay keywords, `XC`
+per-instance conflict rows, `OW` compiled→overlay edges) still exist but are
+**always empty** — build-time plugin configs (`--config`) compile straight
+into the pattern table, and runtime overlays build per-instance rows from the
+given config.
 
 ### Caches and instances
 

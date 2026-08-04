@@ -14,10 +14,6 @@ import { gzipSync } from 'node:zlib'
 // handling.
 import { twMerge as twMergeOptimal, twMergeJoin as twMergeOptimalJoin } from './generated/tw-merge-optimal.mjs'
 
-// tw-merge-optimal exact mode: --no-patterns shape — only the scanned
-// classes, no pattern/theme tables (smaller bundle, pass-through otherwise).
-import { twMerge as twMergeExact, twMergeJoin as twMergeExactJoin } from './generated/tw-merge-optimal-exact.mjs'
-
 // tailwind-merge: reference implementation (point TAILWIND_MERGE_PATH at a
 // different checkout if needed).
 const tailwindMergePath =
@@ -59,9 +55,6 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
     benchWithMemory('simple tw-merge-optimal (twMergeJoin)', () => {
         twMergeOptimalJoin('flex mx-10 px-10', 'mr-5 pr-5')
     })
-    benchWithMemory('simple tw-merge-optimal exact (twMergeJoin)', () => {
-        twMergeExactJoin('flex mx-10 px-10', 'mr-5 pr-5')
-    })
     // The string-only shape (clsx() already joined): tailwind-merge's twMerge
     // still pays the variadic machinery; tw-merge-optimal's string-only
     // twMerge skips it entirely.
@@ -100,20 +93,6 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
             null,
         )
     })
-    benchWithMemory('heavy tw-merge-optimal exact (twMergeJoin)', () => {
-        twMergeExactJoin(
-            'font-medium text-sm leading-16',
-            'group/button relative isolate items-center justify-center overflow-hidden rounded-md outline-none transition [-webkit-app-region:no-drag] focus-visible:ring focus-visible:ring-primary',
-            'inline-flex',
-            'bg-primary-50 ring ring-primary-200',
-            'text-primary dark:text-primary-900 hover:bg-primary-100',
-            false,
-            'font-medium text-sm leading-16 gap-4 px-6 py-4',
-            null,
-            'p-0 size-24',
-            null,
-        )
-    })
 
     benchWithMemory('collection tailwind-merge (with cache)', () => {
         for (let index = 0; index < testDataCollection.length; ++index) {
@@ -123,11 +102,6 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
     benchWithMemory('collection tw-merge-optimal (twMergeJoin)', () => {
         for (let index = 0; index < testDataCollection.length; ++index) {
             twMergeOptimalJoin(...(testDataCollection[index] as TestDataItem))
-        }
-    })
-    benchWithMemory('collection tw-merge-optimal exact (twMergeJoin)', () => {
-        for (let index = 0; index < testDataCollection.length; ++index) {
-            twMergeExactJoin(...(testDataCollection[index] as TestDataItem))
         }
     })
     benchWithMemory('collection tailwind-merge (cache off)', () => {
@@ -141,9 +115,6 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
     })
     benchWithMemory('ultra long list tw-merge-optimal (twMergeJoin)', () => {
         twMergeOptimalJoin(...ultraLongClassList)
-    })
-    benchWithMemory('ultra long list tw-merge-optimal exact (twMergeJoin)', () => {
-        twMergeExactJoin(...ultraLongClassList)
     })
     benchWithMemory('ultra long list tailwind-merge (with cache)', () => {
         twMergeTailwindCached(...ultraLongClassList)
@@ -177,21 +148,13 @@ describe('twMerge — tw-merge-optimal vs tailwind-merge', () => {
             }
         }
     })
-    benchWithMemory('corpus 349 cases tw-merge-optimal exact (twMergeJoin)', () => {
-        for (const [input, expected] of corpusCases) {
-            if (twMergeExactJoin(input) !== expected) {
-                throw new Error(`corpus mismatch: ${JSON.stringify(input)}`)
-            }
-        }
-    })
 })
 
 afterAll(() => {
     const lines: string[] = ['\nBundle size & memory summary:']
     for (const [label, file] of [
         ['tailwind-merge bundle', '../../tailwind-merge/dist/bundle-mjs.mjs'],
-        ['tw-merge-optimal bundle (patterns)', 'generated/tw-merge-optimal.mjs'],
-        ['tw-merge-optimal bundle (exact)', 'generated/tw-merge-optimal-exact.mjs'],
+        ['tw-merge-optimal bundle (guarded)', 'generated/tw-merge-optimal.mjs'],
     ] as const) {
         const url = new URL(file, import.meta.url)
         const bytes = statSync(url).size

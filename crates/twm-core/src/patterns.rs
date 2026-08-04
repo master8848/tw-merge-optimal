@@ -1,13 +1,15 @@
-//! Pattern table: encodes EVERY utility of the design system — keywords,
+//! Pattern table: encodes every utility of the design system — keywords,
 //! theme-key sets and value grammars lifted from the vendored theme + the
-//! `@utility` catalog — so the generated JS can also resolve classes the
+//! `@utility` catalog — so the generated JS can resolve classes the
 //! scanned project never used (tailwind-merge-style heuristics such as
-//! `text-1000xl` being a font-size class). Opt-in via `--patterns`.
+//! `text-1000xl` being a font-size class). Bundler bundles ship the
+//! family-guarded subset (`from_design_system_guarded`); no-bundler
+//! bundles ship the full table (`from_design_system`).
 
 use crate::families::conflict_edges;
 use crate::utility::{DesignSystem, SpecItem, ValueSpec};
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Spec code for "never matches" (unknown types, `size`, ...).
 pub const TYPE_NEVER: usize = 0;
@@ -132,6 +134,39 @@ impl PatternTable {
     /// length (longest first, name ascending) — the same effective
     /// resolution priority as `DesignSystem::ordered_names()`.
     pub fn from_design_system(ds: &DesignSystem) -> PatternTable {
+        Self::build(ds, None)
+    }
+
+    /// Encode only the utilities whose families appear in `used` — the
+    /// family-guarded pattern table the bundler path ships. Family ids are
+    /// compacted to the used families (in the same encounter order as
+    /// `from_design_system`), and conflict sets drop ids of unused families
+    /// (a kept class can never conflict with a family no class resolves to,
+    /// so dropping is sound). Everything else — keywords, theme sets, the
+    /// property table, postfix specials — is filtered to what the kept
+    /// records reference, keeping the bundle small and the runtime matcher
+    /// scanning only the used grammar.
+    ///
+    /// The guard is closed over the postfix specials: `font-size` pulls in
+    /// `leading` and `container-type` pulls in `container-named`, so unseen
+    /// `text-*/7` and `@container/[name]` classes still resolve with their
+    /// special conflicts. (The conflict-edge closure — `p` pulling in its
+    /// side families — happens naturally: the build-time conflict table's
+    /// family list already includes every edge target of the scanned
+    /// classes.)
+    pub fn from_design_system_guarded(ds: &DesignSystem, used: &HashSet<String>) -> PatternTable {
+        let mut used = used.clone();
+        if used.contains("font-size") {
+            used.insert("leading".to_string());
+        }
+        if used.contains("container-type") {
+            used.insert("container-named".to_string());
+        }
+        Self::build(ds, Some(&used))
+    }
+
+    fn build(ds: &DesignSystem, used: Option<&HashSet<String>>) -> PatternTable {
+        let keep = |f: &str| used.map_or(true, |u| u.contains(f));
         let mut family_names: Vec<String> = Vec::new();
         let mut family_ids: HashMap<String, u16> = HashMap::new();
         let mut conflict_sets: Vec<Vec<u16>> = Vec::new();
@@ -163,24 +198,39 @@ impl PatternTable {
             let mut pat_alts = Vec::with_capacity(alts.len());
             for alt in alts {
                 let r = &alt.resolved;
+                // Family guard: keep only alternatives whose own family is
+                // used (per-alt, so `text-*` keeps its color alternative but
+                // drops its font-size one when the project never uses the
+                // font-size family).
+                if used.is_some() && !keep(&r.family) {
+                    continue;
+                }
                 let f = family_id(&r.family, &mut family_names, &mut family_ids);
-                // Conflict id list, exactly like `ConflictTable::make_key`.
+                // Conflict id list, exactly like `ConflictTable::make_key`,
+                // but with unused families dropped (family-guarded mode).
                 let mut conflicts: Vec<u16> = vec![f];
                 for pf in &r.prop_families {
+                    if !keep(pf) {
+                        continue;
+                    }
                     let id = family_id(pf, &mut family_names, &mut family_ids);
                     push_unique(&mut conflicts, id);
                     for edge in conflict_edges(pf) {
+                        if keep(edge) {
+                            push_unique(
+                                &mut conflicts,
+                                family_id(edge, &mut family_names, &mut family_ids),
+                            );
+                        }
+                    }
+                }
+                for edge in conflict_edges(&r.family) {
+                    if keep(edge) {
                         push_unique(
                             &mut conflicts,
                             family_id(edge, &mut family_names, &mut family_ids),
                         );
                     }
-                }
-                for edge in conflict_edges(&r.family) {
-                    push_unique(
-                        &mut conflicts,
-                        family_id(edge, &mut family_names, &mut family_ids),
-                    );
                 }
                 conflicts.sort_unstable();
                 let wid = match set_ids.get(&conflicts) {
@@ -218,6 +268,9 @@ impl PatternTable {
                     groups,
                 });
             }
+            if pat_alts.is_empty() {
+                continue;
+            }
             utilities.push(PatternUtility {
                 name: name.to_string(),
                 wildcard,
@@ -230,20 +283,21 @@ impl PatternTable {
         // patterns table is built before classes are seen, so register it
         // here — then it lands in the seeded family list and the exact
         // table's postfix entries map to the same id.
-        family_id("container-named", &mut family_names, &mut family_ids);
+        if keep("container-named") {
+            family_id("container-named", &mut family_names, &mut family_ids);
+        }
 
         // Property -> family, for arbitrary-property classes. Resolved with a
         // synthetic utility name so none of prop_family's utility-prefix
         // guards apply (`[box-shadow:...]` -> `shadow`, `[color:...]` ->
-        // `color`, `[padding:...]` -> `p`).
+        // `color`, `[padding:...]` -> `p`). Guarded mode keeps only the
+        // properties whose family is used.
         let mut prop_family: Vec<(String, u16)> = Vec::new();
-        let mut prop_ids: HashMap<String, u16> = HashMap::new();
         let mut all_props: Vec<String> = Vec::new();
         for u in &ds.utilities {
             for alt in u.1 {
                 for (prop, _) in &alt.props {
-                    if !prop_ids.contains_key(prop) {
-                        prop_ids.insert(prop.clone(), 0);
+                    if !all_props.contains(&prop.clone()) {
                         all_props.push(prop.clone());
                     }
                 }
@@ -252,10 +306,12 @@ impl PatternTable {
         all_props.sort();
         for prop in all_props {
             let fam = crate::families::prop_family(&prop, "arbitrary-property");
+            if !keep(&fam) {
+                continue;
+            }
             let id = family_id(&fam, &mut family_names, &mut family_ids);
-            prop_ids.insert(prop, id);
+            prop_family.push((prop, id));
         }
-        prop_family.extend(prop_ids);
         prop_family.sort_by(|a, b| a.0.cmp(&b.0));
 
         let leading = family_names
@@ -366,6 +422,10 @@ fn spec_code(
             };
             (KW_OFFSET + idx) as u16
         }
+        // The build-time color scale accepts any value (plain, arbitrary
+        // value or variable — `SpecItem::matches` treats "color" like "any"),
+        // so the `<color>` marker maps to the always-true `any` validator.
+        SpecItem::Type(t) if *t == "color" => type_code("any") as u16,
         SpecItem::Type(t) => type_code(t) as u16,
         SpecItem::ThemeKey { prefix, has_star } => {
             if prefix == "--spacing" && !*has_star {

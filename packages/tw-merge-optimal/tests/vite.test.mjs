@@ -28,12 +28,12 @@ describe('twMergeOptimal', () => {
         expect(bundle).toContain('export function twMerge');
     });
 
-    it('logs an info line with class and byte counts', async () => {
+    it('logs an info line with family and byte counts', async () => {
         const { file } = makeFixture();
         const plugin = twMergeOptimal({ sources: [file] });
         const lines = [];
         await plugin.buildStart.call({ info: (m) => lines.push(m) });
-        expect(lines[0]).toMatch(/^tw-merge-optimal: \d+ classes, \d+ bytes$/);
+        expect(lines[0]).toMatch(/^tw-merge-optimal: \d+ families, \d+ bytes$/);
     });
 });
 

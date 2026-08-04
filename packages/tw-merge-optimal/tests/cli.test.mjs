@@ -13,7 +13,9 @@ describe('generate', () => {
         expect(status).toBe(0);
         expect(bytes).toBeNull();
         expect(bundle).toContain('export function twMerge');
-        expect(bundle).toContain('"p-3"');
+        // Matcher-only bundle: no scanned-class map, but the family-guarded
+        // pattern table ships the used `p-` wildcard family.
+        expect(bundle).toContain('"p-"');
 
         const outFile = join(dir, 'generated.mjs');
         writeFileSync(outFile, bundle);

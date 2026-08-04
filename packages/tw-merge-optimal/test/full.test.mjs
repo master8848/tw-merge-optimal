@@ -10,7 +10,7 @@ const cases = JSON.parse(
     readFileSync(join(THIS_DIR, '../../../bench/generated/corpus-cases.json'), 'utf8'),
 );
 
-test('pattern sub-import merges all 349 corpus cases (tw-merge-optimal semantics)', () => {
+test('full bundle merges all 349 corpus cases (tw-merge-optimal semantics)', () => {
     let failed = 0;
     for (const [input, expected] of cases) {
         const got = twMerge(input);

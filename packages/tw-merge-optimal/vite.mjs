@@ -15,9 +15,9 @@ export function twMergeOptimal(options = {}) {
             });
             cached = result.bundle;
             if (this.info) {
-                const m = cached.match(/const G=\{(.*)\};/);
-                const classes = m ? m[1].split(',').filter(Boolean).length : 0;
-                this.info(`tw-merge-optimal: ${classes} classes, ${cached.length} bytes`);
+                const m = cached.match(/const FN=\[(.*)\];/);
+                const n = m ? m[1].split(',').filter(Boolean).length : 0;
+                this.info(`tw-merge-optimal: ${n} families, ${cached.length} bytes`);
             }
         },
         resolveId(id) {

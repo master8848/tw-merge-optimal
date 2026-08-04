@@ -16,7 +16,6 @@ export function twMergeOptimalBabel(options = {}) {
                 out,
                 ...(options.css ? ['--css', options.css] : []),
                 ...(options.prefix ? ['--prefix', options.prefix] : []),
-                ...(options.patterns === false ? ['--no-patterns'] : []),
                 ...(options.sources ?? DEFAULT_SOURCES),
             ], { encoding: 'utf8' });
             if (result.status !== 0) {

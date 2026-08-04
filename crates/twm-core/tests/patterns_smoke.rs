@@ -1,17 +1,19 @@
-//! Patterns-mode smoke test: generate the patterns JS bundle (exact table
-//! seeded with the pattern family ids + the full pattern table), run the
-//! pattern resolution cases in Node, and check the bundle-size budget for
-//! the corpus union.
+//! Matcher smoke test: generate the matcher-only JS bundle from the family-
+//! guarded pattern table (the bundler shape), run the pattern resolution
+//! cases in Node — every class resolves through the pattern matcher `m()`,
+//! there is no G table — and check the bundle-size budget for the corpus
+//! union.
 mod common;
 mod corpus_data;
 
+use std::collections::HashSet;
 use std::process::Command;
 
 use twm_core::patterns::PatternTable;
 use twm_core::{generate_js, ConflictTable, GenerateOptions};
 
 /// (input, expected) — unseen classes (text-1000xl, p-1000, ...) must
-/// resolve through the pattern table; seen ones through the exact table.
+/// resolve through the pattern table; seen ones through the same matcher.
 const SMOKE_CASES: &[(&str, &str)] = &[
     ("text-2xl text-1000xl", "text-1000xl"),
     ("text-1000xl text-2xl", "text-2xl"),
@@ -46,7 +48,7 @@ const SMOKE_CASES: &[(&str, &str)] = &[
         "hover:bg-dark-red p-3 bg-[#B91C1C]",
     ),
     ("px-2 py-1 p-17 bg-[#B91C1C]", "p-17 bg-[#B91C1C]"),
-    // font-size postfix -> leading (seen G postfix path + unseen m path)
+    // font-size postfix -> leading (always-on postfix special)
     ("leading-9 text-lg/none", "text-lg/none"),
     ("leading-9 text-5xl/17", "text-5xl/17"),
     // named container conflicts with plain container-type
@@ -75,28 +77,26 @@ fn token_union(cases: &[(&str, &str)]) -> Vec<String> {
 #[test]
 fn patterns_smoke_and_bundle_size() {
     let ds = common::design_system();
-    let patterns = PatternTable::from_design_system(&ds);
 
-    // Scanned classes: the whole corpus union only — the smoke tokens are
-    // deliberately NOT scanned, so they resolve through the pattern table
-    // (m), exercising the heuristics for real.
-    let classes = token_union(
+    // Scanned classes: the whole corpus union PLUS the smoke tokens — the
+    // family guard must cover everything the runtime resolves (a real scan
+    // would extract these too). The runtime still resolves every class
+    // through the matcher `m()`: there is no G table.
+    let mut classes = token_union(
         &corpus_data::FILES
             .iter()
             .flat_map(|f| f.cases.iter().map(|(i, e)| (*i, *e)))
             .collect::<Vec<_>>(),
     );
-    let table =
-        ConflictTable::from_classes_seeded(&ds, &classes, None, patterns.family_names.clone());
-    let js = generate_js(
-        &table,
-        Some(&patterns),
-        &GenerateOptions {
-            prefix: None,
-            patterns: true,
-            ..Default::default()
-        },
-    );
+    for token in token_union(SMOKE_CASES) {
+        if !classes.contains(&token) {
+            classes.push(token);
+        }
+    }
+    let table = ConflictTable::from_classes(&ds, &classes, None);
+    let guard: HashSet<String> = table.family_names.iter().cloned().collect();
+    let patterns = PatternTable::from_design_system_guarded(&ds, &guard);
+    let js = generate_js(&patterns, &GenerateOptions::default());
 
     let bundle_bytes = js.len();
     println!("patterns corpus-union bundle size: {bundle_bytes} bytes");
@@ -112,15 +112,19 @@ fn patterns_smoke_and_bundle_size() {
         js.contains("const FN=["),
         "patterns bundle must contain family names"
     );
+    assert!(
+        !js.contains("const G="),
+        "patterns bundle must not contain a G table"
+    );
 
     let dir = tempfile::tempdir().expect("temp dir");
     let bundle_path = dir.path().join("twm.mjs");
     std::fs::write(&bundle_path, &js).expect("write bundle");
     let harness_path = dir.path().join("harness.mjs");
 
-    // Full corpus parity in patterns mode: every corpus class is in the exact
-    // table (G), so the run also proves the patterns-mode W table (family
-    // unions) behaves identically for used classes.
+    // Full corpus parity in matcher mode: every class — seen or unseen —
+    // resolves through `m()`, so this run proves the matcher + guarded W
+    // table behaves identically to the Rust reference for the whole corpus.
     let mut all_cases: Vec<(&str, &str)> = SMOKE_CASES.to_vec();
     for file in corpus_data::FILES {
         for (input, expected) in file.cases {
@@ -182,23 +186,14 @@ process.exit(failed > 0 ? 1 : 0);
 
 /// Every class resolves through the pattern matcher (m), including the very
 /// FIRST record of the flat P table — regression guard for the leading
-/// -segment index spans, which must start at flat index 0.
+/// -segment index spans, which must start at flat index 0. Uses the FULL
+/// (unguarded) pattern table — the shape of the no-bundler bundles — so no
+/// scan is needed and every class resolves.
 #[test]
 fn patterns_matcher_resolves_unseen_classes() {
     let ds = common::design_system();
     let patterns = PatternTable::from_design_system(&ds);
-    // Nothing scanned: G is empty, so every class takes the m() path.
-    let table =
-        ConflictTable::from_classes_seeded(&ds, &[], None, patterns.family_names.clone());
-    let js = generate_js(
-        &table,
-        Some(&patterns),
-        &GenerateOptions {
-            prefix: None,
-            patterns: true,
-            ..Default::default()
-        },
-    );
+    let js = generate_js(&patterns, &GenerateOptions::default());
 
     let dir = tempfile::tempdir().expect("temp dir");
     let bundle_path = dir.path().join("twm.mjs");

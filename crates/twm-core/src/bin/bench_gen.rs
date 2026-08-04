@@ -5,7 +5,8 @@
 //!   assertions), the tailwind-merge benchmark collection
 //!   (`bench/tw-merge-benchmark-data.json`) and the "ultra long class list"
 //!   benchmark classes — so every class the benchmark feeds to `twMerge`
-//!   actually resolves in the table.
+//!   actually resolves in the table. The bundle ships the family-guarded
+//!   pattern table (the union's families) and the matcher-only runtime.
 //! - `corpus-cases.json` — the 349 (input, expected, deviation) triples, so
 //!   the Node benchmark can re-check parity against tailwind-merge itself.
 //!   The third element flags the documented-deviation corpus group
@@ -20,7 +21,7 @@
 #[path = "../../tests/corpus_data.rs"]
 mod corpus_data;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 
 use twm_core::generate::{generate_js, js_string, GenerateOptions};
@@ -64,13 +65,16 @@ fn main() {
 
     let ds = twm_core::default_design_system();
     let classes: Vec<String> = classes.into_iter().collect();
-    // The out-of-box default: full pattern table + seeded family ids, so the
-    // bench measures the same bundle shape users actually get.
-    let patterns = PatternTable::from_design_system(&ds);
-    let table =
-        ConflictTable::from_classes_seeded(&ds, &classes, None, patterns.family_names.clone());
+    // The family guard: the scanned union's families decide which pattern
+    // table ships — the bench measures the same bundle shape bundler users
+    // get.
+    let table = ConflictTable::from_classes(&ds, &classes, None);
+    let guard: HashSet<String> = table.family_names.iter().cloned().collect();
+    let patterns = PatternTable::from_design_system_guarded(&ds, &guard);
 
-    // Resolution stats: how many of the benchmark's unique classes are in the table?
+    // Resolution stats: how many of the benchmark's unique classes resolve
+    // through the guarded table at build time (a lower bound on runtime
+    // resolution — the matcher accepts everything the guard's families do).
     let mut bench_classes: Vec<String> = Vec::new();
     for s in &quoted {
         bench_classes.extend(s.split_whitespace().map(|t| t.to_string()));
@@ -95,14 +99,11 @@ fn main() {
     let out_dir = root.join("bench/generated");
     std::fs::create_dir_all(&out_dir).expect("create bench/generated");
 
-    // Patterns bundle: the out-of-box default. Embeds the full pattern table,
-    // so classes never seen at build time still merge correctly.
+    // Runtime bundle: matcher-only over the family-guarded pattern table.
     let js = generate_js(
-        &table,
-        Some(&patterns),
+        &patterns,
         &GenerateOptions {
             prefix: None,
-            patterns: true,
             ..Default::default()
         },
     );
@@ -110,36 +111,14 @@ fn main() {
     std::fs::write(&bundle, &js).expect("write bundle");
     eprintln!("bench_gen: wrote {} ({} bytes)", bundle.display(), js.len());
 
-    // Exact bundle (--no-patterns shape): only the scanned classes, no
-    // pattern/theme tables. Much smaller; classes outside the scan pass
-    // through unmerged. Benchmarked so the two modes can be compared.
-    let exact = generate_js(
-        &table,
-        None,
-        &GenerateOptions {
-            prefix: None,
-            patterns: false,
-            ..Default::default()
-        },
-    );
-    let exact_bundle = out_dir.join("tw-merge-optimal-exact.mjs");
-    std::fs::write(&exact_bundle, &exact).expect("write exact bundle");
-    eprintln!(
-        "bench_gen: wrote {} ({} bytes)",
-        exact_bundle.display(),
-        exact.len()
-    );
-
     // Extend bundle: the prebuilt runtime-extend entry (package
-    // `./extend` export). Same patterns-mode corpus/inputs as the full
+    // `./extend` export). Same guarded-table corpus/inputs as the plain
     // bundle, plus the overlay machinery (empty module overlay — build-time
     // configs are always compiled) and the runtime extend API.
     let extend = generate_js(
-        &table,
-        Some(&patterns),
+        &patterns,
         &GenerateOptions {
             prefix: None,
-            patterns: true,
             extend: true,
             ..Default::default()
         },

@@ -24,7 +24,6 @@ struct Args {
     out: Option<String>,
     prefix: Option<String>,
     check: bool,
-    patterns: bool,
     config: Option<String>,
     extend: bool,
     paths: Vec<String>,
@@ -35,7 +34,7 @@ fn usage() -> ! {
         "twm-gen v0.1 — build-time Tailwind class-merge generator\n\
          \n\
          usage: twm-gen [--css <file>] [--out <file>] [--prefix <p>] [--config <file>] [--extend]\n\
-         \x20              [--no-patterns] [--check] <globs-or-paths...>\n\
+         \x20              [--check] <globs-or-paths...>\n\
          \n\
          options:\n\
          \x20 --css <file>    extra @utility/@theme CSS to extend the design system\n\
@@ -45,9 +44,6 @@ fn usage() -> ! {
          \x20 --prefix <p>    only treat classes with the `p:` prefix as Tailwind classes\n\
          \x20 --extend        emit the runtime extend API (extendTailwindMerge, validators,\n\
          \x20                  ...) plus the overlay machinery for runtime configs\n\
-         \x20 --no-patterns   emit only the scanned classes (smaller bundle; classes the\n\
-         \x20                  scanner missed pass through unmerged — default is full\n\
-         \x20                  pattern-table resolution, so unseen classes still merge)\n\
          \x20 --check         report conflicts among used classes; exit 1 if any exist\n\
          \x20 -h, --help      show this help"
     );
@@ -98,36 +94,31 @@ fn main() -> ExitCode {
         return run_check(&ds, prefix, cfg.as_ref(), &hits);
     }
 
-    // Patterns mode: build the full design-system pattern table and seed the
-    // conflict table with its family ids, so exact and pattern lookups share
-    // one numbering. The pattern table covers the merged design system, so
-    // plugin classes resolve through it too.
-    let patterns = args.patterns.then(|| PatternTable::from_design_system(&ds));
-    let table = match &patterns {
-        Some(p) => {
-            ConflictTable::from_classes_seeded(&ds, &all_classes, prefix, p.family_names.clone())
+    // Family guard: the scanned classes decide WHICH grammar ships. The
+    // exact conflict table is a build-time-only artifact — it resolves every
+    // scanned class, so its family list is exactly the set of families the
+    // project can produce. Plugin config families are always included (their
+    // classes may never be scanned, but the pattern table must cover them).
+    let table = ConflictTable::from_classes(&ds, &all_classes, prefix);
+    let mut guard: HashSet<String> = table.family_names.iter().cloned().collect();
+    if let Some(c) = cfg.as_ref() {
+        for (group, _) in &c.class_groups {
+            guard.insert(group.clone());
         }
-        None => {
-            let mut t = ConflictTable::from_classes(&ds, &all_classes, prefix);
-            // Exact mode: patch the compiled table with the plugin config
-            // (statics resolve, directed edges patch every entry of the
-            // source family); wildcard-only edges stay for the runtime
-            // overlay emission.
-            if let Some(c) = cfg.as_ref() {
-                let _ = apply_plugin_config(&mut t, &ds, c, prefix);
+        for (group, targets) in &c.conflicting_class_groups {
+            guard.insert(group.clone());
+            for t in targets {
+                guard.insert(t.clone());
             }
-            t
         }
-    };
+    }
+    let patterns = PatternTable::from_design_system_guarded(&ds, &guard);
     let js = generate_js(
-        &table,
-        patterns.as_ref(),
+        &patterns,
         &GenerateOptions {
             prefix,
-            patterns: args.patterns,
             plugin: cfg.as_ref(),
             extend: args.extend,
-            ds: Some(&ds),
         },
     );
     match &args.out {
@@ -137,16 +128,12 @@ fn main() -> ExitCode {
                 std::process::exit(1);
             });
             eprintln!(
-                "twm-gen: {} files scanned, {} unique candidates, wrote {} ({} bytes{}{})",
+                "twm-gen: {} files scanned, {} unique candidates, {} families, wrote {} ({} bytes{})",
                 files.len(),
                 all_classes.len(),
+                table.family_names.len(),
                 out,
                 js.len(),
-                if args.patterns {
-                    ", patterns"
-                } else {
-                    ", exact"
-                },
                 if args.extend { ", extend" } else { "" }
             );
         }
@@ -171,9 +158,6 @@ fn parse_args() -> Option<Args> {
     let mut out = None;
     let mut prefix = None;
     let mut check = false;
-    // Full pattern-table resolution is the default (unseen classes still
-    // merge correctly); --no-patterns opts out for a smaller bundle.
-    let mut patterns = true;
     let mut config = None;
     let mut extend = false;
     let mut paths = Vec::new();
@@ -187,8 +171,6 @@ fn parse_args() -> Option<Args> {
             "--config" => config = Some(it.next()?),
             "--extend" => extend = true,
             "--check" => check = true,
-            "--patterns" => patterns = true,
-            "--no-patterns" => patterns = false,
             _ if arg.starts_with('-') && arg.len() > 1 => {
                 eprintln!("twm-gen: unknown option {arg}");
                 return None;
@@ -201,7 +183,6 @@ fn parse_args() -> Option<Args> {
         out,
         prefix,
         check,
-        patterns,
         config,
         extend,
         paths,

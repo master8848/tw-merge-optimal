@@ -20,9 +20,6 @@ OPTIONS
                    the design system
   --out <file>     write the generated JS bundle to <file> (default: stdout)
   --prefix <p>     only treat classes with the \`p:\` prefix as Tailwind classes
-  --no-patterns    emit only the scanned classes (smaller bundle; classes the
-                   scanner missed pass through unmerged — default is full
-                   pattern-table resolution, so unseen classes still merge)
   --check          report conflicts among used classes; exit 1 if any exist
   -h, --help       show this help
 
@@ -127,24 +124,15 @@ export function resolveOutFile(options = {}) {
 }
 
 export function generate(options = {}) {
-    const {
-        sources = [],
-        css,
-        config,
-        out,
-        prefix,
-        patterns,
-        check,
-        engine,
-    } = options;
+    const { sources = [], css, config, out, prefix, check, engine } = options;
 
     const args = [];
     if (css) args.push('--css', css);
     if (out) args.push('--out', out);
     if (prefix) args.push('--prefix', prefix);
-    // Patterns (unseen classes still resolve) are the default; opt out
-    // explicitly for a smaller bundle.
-    if (patterns === false) args.push('--no-patterns');
+    // Every class resolves through the pattern matcher over the family-guarded
+    // pattern table (only the project's used families ship); no mode flags.
+    // `options.patterns` is tolerated but ignored (older bundler options).
     if (check) args.push('--check');
     args.push(...sources);
 

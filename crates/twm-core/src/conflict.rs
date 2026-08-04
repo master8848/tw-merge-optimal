@@ -35,10 +35,6 @@ pub struct ConflictTable {
     pub postfix_entries: HashMap<String, ClassKey>,
     /// Used arbitrary-value prefixes -> key (fallback: `p-[10px]` -> `p-arb`).
     pub arb_fallbacks: HashMap<String, ClassKey>,
-    /// Feature flags for JS generation.
-    pub needs_sort_modifiers: bool,
-    pub needs_important: bool,
-    pub needs_postfix: bool,
 }
 
 impl ConflictTable {
@@ -50,48 +46,10 @@ impl ConflictTable {
         table
     }
 
-    /// Like `from_classes`, but pre-seeds `family_names` (patterns mode: the
-    /// pattern table's family list, so the table's family ids match the
-    /// pattern table's ids).
-    pub fn from_classes_seeded(
-        ds: &DesignSystem,
-        classes: &[String],
-        prefix: Option<&str>,
-        families: Vec<String>,
-    ) -> Self {
-        let mut table = ConflictTable {
-            family_names: families,
-            ..Default::default()
-        };
-        table.rebuild_family_ids();
-        for class in classes {
-            table.add_class(ds, class, prefix);
-        }
-        table
-    }
-
-    fn rebuild_family_ids(&mut self) {
-        self.family_ids = self
-            .family_names
-            .iter()
-            .enumerate()
-            .map(|(i, n)| (n.clone(), i as u16))
-            .collect();
-    }
-
     pub(crate) fn add_class(&mut self, ds: &DesignSystem, class: &str, prefix: Option<&str>) {
         let parsed = parse_class_name(class, prefix);
         if parsed.is_external {
             return;
-        }
-        if parsed.modifiers.len() > 1 {
-            self.needs_sort_modifiers = true;
-        }
-        if parsed.has_important {
-            self.needs_important = true;
-        }
-        if parsed.maybe_postfix_position.is_some() {
-            self.needs_postfix = true;
         }
 
         let base = parsed.base_without_postfix().to_string();
@@ -265,57 +223,6 @@ impl ConflictTable {
             }
         }
         out
-    }
-
-    /// Shortest input length at which a merge call can still change the
-    /// output — the minimum length an input needs before the fast path must
-    /// hand over to the full merge. Two mechanisms change output, so both
-    /// are bounded here:
-    ///
-    /// - a conflicting pair (`a` + space + `b`, right-to-left keeps `b`):
-    ///   computed over every runtime-lookup key (entries, postfix keys,
-    ///   arbitrary fallbacks) using the family-level conflict relation (an
-    ///   edge in either direction means one order of the pair drops the
-    ///   other);
-    /// - a duplicate pair (`a a` — identical classes dedupe to one).
-    ///
-    /// `None` only when the table is empty (nothing can ever change the
-    /// output).
-    pub fn min_conflict_pair_len(&self) -> Option<usize> {
-        let w = self.family_conflicts();
-        // Only the SHORTEST runtime-lookup key per family matters: the
-        // minimum over all same-family pairs (i,j) is the duplicate bound
-        // 2*min_len+1 of that family's shortest key, and the minimum over
-        // all cross-family pairs (i,j) is l_fa + 1 + l_fb for the two
-        // shortest keys of any conflicting family pair — any longer key in
-        // the same family only makes both sums larger.
-        let mut shortest: Vec<Option<usize>> = vec![None; self.family_names.len()];
-        let mut best = usize::MAX;
-        for (key, e) in self
-            .entries
-            .iter()
-            .chain(self.postfix_entries.iter())
-            .chain(self.arb_fallbacks.iter())
-        {
-            let f = self.family_id_of(&e.family) as usize;
-            let l = key.encode_utf16().count();
-            if shortest[f].map_or(true, |s| l < s) {
-                shortest[f] = Some(l);
-            }
-            // Identical classes dedupe, so the fast path must not fire for
-            // inputs that could hold `a a`.
-            best = best.min(l * 2 + 1);
-        }
-        for fa in 0..shortest.len() {
-            let Some(la) = shortest[fa] else { continue };
-            for fb in fa + 1..shortest.len() {
-                let Some(lb) = shortest[fb] else { continue };
-                if w[fa].contains(&(fb as u16)) || w[fb].contains(&(fa as u16)) {
-                    best = best.min(la + 1 + lb);
-                }
-            }
-        }
-        (best != usize::MAX).then_some(best)
     }
 }
 

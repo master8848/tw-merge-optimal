@@ -1,10 +1,12 @@
-//! JS parity: generate the `twMerge`/`twJoin` ESM bundle from the corpus
-//! union, run the ENTIRE runtime corpus in Node, and assert zero failures
-//! plus bundle-size budgets.
+//! JS parity: generate the `twMerge`/`twJoin` ESM bundle from the family-
+//! guarded pattern table of the corpus union (the bundler shape), run the
+//! ENTIRE runtime corpus in Node — every class through the matcher, no G
+//! table — and assert zero failures plus bundle-size budgets.
 
 mod common;
 mod corpus_data;
 
+use std::collections::HashSet;
 use std::process::Command;
 
 use twm_core::{generate_js, ConflictTable, GenerateOptions, PatternTable};
@@ -25,54 +27,41 @@ fn corpus_union() -> Vec<String> {
     union
 }
 
+/// Family-guarded pattern table: the scan's used families decide which
+/// grammar ships — the exact bundle users of the bundler path get.
+fn guarded_table(classes: &[String]) -> PatternTable {
+    let ds = common::design_system();
+    let table = ConflictTable::from_classes(&ds, classes, None);
+    let guard: HashSet<String> = table.family_names.iter().cloned().collect();
+    PatternTable::from_design_system_guarded(&ds, &guard)
+}
+
 #[test]
 fn js_parity_and_bundle_sizes() {
-    let ds = common::design_system();
     let union = corpus_union();
-    let exact_table = ConflictTable::from_classes(&ds, &union, None);
-    let exact_js = generate_js(
-        &exact_table,
-        None,
-        &GenerateOptions {
-            prefix: None,
-            patterns: false,
-            ..Default::default()
-        },
-    );
+    let patterns = guarded_table(&union);
+    let js = generate_js(&patterns, &GenerateOptions::default());
 
-    // The out-of-box default: full pattern table + seeded family ids, so
-    // classes the scanner missed still resolve at runtime.
-    let patterns = PatternTable::from_design_system(&ds);
-    let patterns_table =
-        ConflictTable::from_classes_seeded(&ds, &union, None, patterns.family_names.clone());
-    let patterns_js = generate_js(
-        &patterns_table,
-        Some(&patterns),
-        &GenerateOptions {
-            prefix: None,
-            patterns: true,
-            ..Default::default()
-        },
-    );
-
-    let exact_bytes = exact_js.len();
-    let patterns_bytes = patterns_js.len();
-    println!("corpus-union exact bundle size: {exact_bytes} bytes");
-    println!("corpus-union patterns bundle size: {patterns_bytes} bytes");
+    let bytes = js.len();
+    println!("guarded corpus-union bundle size: {bytes} bytes");
     println!(
-        "exact MC={} (patterns MC=7)",
-        mc_of(&exact_js)
+        "guarded corpus-union: {} families, {} records",
+        patterns.family_names.len(),
+        patterns.utilities.iter().map(|u| u.alts.len()).sum::<usize>()
     );
     assert!(
-        exact_bytes < 20 * 1024,
-        "exact corpus-union bundle must stay under 20 KB, was {exact_bytes} bytes"
+        !js.contains("const G="),
+        "bundle must not contain the scanned-class table"
     );
+    assert!(js.contains("const MC=7;"), "MC must be the grammar floor");
     assert!(
-        patterns_bytes < 80 * 1024,
-        "patterns corpus-union bundle must stay under 80 KB, was {patterns_bytes} bytes"
+        bytes < 80 * 1024,
+        "guarded corpus-union bundle must stay under 80 KB, was {bytes} bytes"
     );
 
-    // Small-sample bundle: two files, ~40 classes.
+    // Small-sample bundle: two files, ~40 classes — the guard shrinks the
+    // grammar to the used families, so the bundle stays far below the full
+    // design-system grammar.
     let small_union: Vec<String> = corpus_data::FILES[3]
         .cases
         .iter()
@@ -80,29 +69,21 @@ fn js_parity_and_bundle_sizes() {
         .flat_map(|(i, e)| i.split_whitespace().chain(e.split_whitespace()))
         .map(|s| s.to_string())
         .collect();
-    let small_table = ConflictTable::from_classes(&ds, &small_union, None);
-    let small_js = generate_js(
-        &small_table,
-        None,
-        &GenerateOptions {
-            prefix: None,
-            patterns: false,
-            ..Default::default()
-        },
-    );
+    let small_patterns = guarded_table(&small_union);
+    let small_js = generate_js(&small_patterns, &GenerateOptions::default());
     let small_bytes = small_js.len();
     println!(
-        "small-sample bundle size: {small_bytes} bytes ({} classes, MC={})",
+        "small-sample bundle size: {small_bytes} bytes ({} classes, {} families)",
         small_union.len(),
-        mc_of(&small_js)
+        small_patterns.family_names.len()
     );
     assert!(
-        small_bytes < 4250 + 170,
-        "small-sample bundle must stay under 4.32 KB, was {small_bytes} bytes — fixed runtime wrapper (single-arg fast path + merge split) costs ~170 B per bundle, the twMergeJoin export another ~170 B"
+        small_bytes < 20 * 1024,
+        "small-sample bundle must stay under 20 KB, was {small_bytes} bytes"
     );
 
-    // Prefixed bundle (prefix `tw`, patterns mode): the `prefixes` corpus
-    // group. Non-prefixed tokens pass through untouched; prefixed ones merge.
+    // Prefixed bundle (prefix `tw`): the `prefixes` corpus group.
+    // Non-prefixed tokens pass through untouched; prefixed ones merge.
     let prefix_classes: Vec<String> = vec![
         "tw:block".into(),
         "tw:hidden".into(),
@@ -117,18 +98,11 @@ fn js_parity_and_bundle_sizes() {
         "tw:hover:focus:right-0!".into(),
         "tw:focus:hover:inset-0!".into(),
     ];
-    let prefix_table = ConflictTable::from_classes_seeded(
-        &ds,
-        &prefix_classes,
-        Some("tw"),
-        patterns.family_names.clone(),
-    );
+    let prefix_patterns = guarded_table(&prefix_classes);
     let prefix_js = generate_js(
-        &prefix_table,
-        Some(&patterns),
+        &prefix_patterns,
         &GenerateOptions {
             prefix: Some("tw"),
-            patterns: true,
             ..Default::default()
         },
     );
@@ -155,10 +129,8 @@ fn js_parity_and_bundle_sizes() {
     cases_json.push(']');
 
     let dir = tempfile::tempdir().expect("temp dir");
-    let exact_path = dir.path().join("twm-exact.mjs");
-    std::fs::write(&exact_path, &exact_js).expect("write exact bundle");
-    let patterns_path = dir.path().join("twm-patterns.mjs");
-    std::fs::write(&patterns_path, &patterns_js).expect("write patterns bundle");
+    let bundle_path = dir.path().join("twm.mjs");
+    std::fs::write(&bundle_path, &js).expect("write bundle");
     let prefix_path = dir.path().join("twm-prefix.mjs");
     std::fs::write(&prefix_path, &prefix_js).expect("write prefix bundle");
     let harness_path = dir.path().join("harness.mjs");
@@ -187,36 +159,43 @@ fn js_parity_and_bundle_sizes() {
     prefix_json.push(']');
     let harness = format!(
         r#"
-import {{ twMerge as exact, setCacheSize as exactCache }} from './twm-exact.mjs';
-import {{ twMerge as patterns, setCacheSize as patternsCache }} from './twm-patterns.mjs';
+import {{ twMerge, setCacheSize }} from './twm.mjs';
 import {{ twMerge as prefixed }} from './twm-prefix.mjs';
 const cases = {cases_json};
 let failed = 0;
 for (let i = 0; i < cases.length; i++) {{
     const [input, expected] = cases[i];
-    for (const [name, twMerge] of [['exact', exact], ['patterns', patterns]]) {{
-        const got = twMerge(input);
-        if (got !== expected) {{
-            failed++;
-            console.error(`FAIL ${{name}} ${{i}}: ${{JSON.stringify(input)}} -> ${{JSON.stringify(got)}}, expected ${{JSON.stringify(expected)}}`);
-        }}
+    const got = twMerge(input);
+    if (got !== expected) {{
+        failed++;
+        console.error(`FAIL ${{i}}: ${{JSON.stringify(input)}} -> ${{JSON.stringify(got)}}, expected ${{JSON.stringify(expected)}}`);
     }}
 }}
-console.log(`PARITY ${{cases.length}} cases x 2 modes, ${{failed}} failures`);
-exactCache(0);
-patternsCache(0);
+console.log(`PARITY ${{cases.length}} cases, ${{failed}} failures`);
+setCacheSize(0);
 let coff = 0;
 for (let i = 0; i < cases.length; i++) {{
     const [input, expected] = cases[i];
-    for (const [name, twMerge] of [['exact', exact], ['patterns', patterns]]) {{
-        const got = twMerge(input);
-        if (got !== expected) {{
-            coff++;
-            console.error(`FAIL(cache off) ${{name}} ${{i}}: ${{JSON.stringify(input)}} -> ${{JSON.stringify(got)}}, expected ${{JSON.stringify(expected)}}`);
-        }}
+    const got = twMerge(input);
+    if (got !== expected) {{
+        coff++;
+        console.error(`FAIL(cache off) ${{i}}: ${{JSON.stringify(input)}} -> ${{JSON.stringify(got)}}, expected ${{JSON.stringify(expected)}}`);
     }}
 }}
-console.log(`CACHE_OFF_PARITY ${{cases.length}} cases x 2 modes, ${{coff}} failures`);
+console.log(`CACHE_OFF_PARITY ${{cases.length}} cases, ${{coff}} failures`);
+// Tiny LRU: force evictions on every insert — evicted entries must simply
+// recompute; parity must hold.
+setCacheSize(16);
+let clru = 0;
+for (let i = 0; i < cases.length; i++) {{
+    const [input, expected] = cases[i];
+    const got = twMerge(input);
+    if (got !== expected) {{
+        clru++;
+        console.error(`FAIL(lru) ${{i}}: ${{JSON.stringify(input)}} -> ${{JSON.stringify(got)}}, expected ${{JSON.stringify(expected)}}`);
+    }}
+}}
+console.log(`LRU_PARITY ${{cases.length}} cases, ${{clru}} failures`);
 const pcases = {prefix_json};
 let pfailed = 0;
 for (let i = 0; i < pcases.length; i++) {{
@@ -228,7 +207,7 @@ for (let i = 0; i < pcases.length; i++) {{
     }}
 }}
 console.log(`PREFIX_PARITY ${{pcases.length}} cases, ${{pfailed}} failures`);
-process.exit(failed > 0 || coff > 0 || pfailed > 0 ? 1 : 0);
+process.exit(failed > 0 || coff > 0 || clru > 0 || pfailed > 0 ? 1 : 0);
 "#
     );
     std::fs::write(&harness_path, &harness).expect("write harness");
@@ -249,12 +228,16 @@ process.exit(failed > 0 || coff > 0 || pfailed > 0 ? 1 : 0);
         output.status
     );
     assert!(
-        stdout.contains(&format!("PARITY {case_count} cases x 2 modes, 0 failures")),
-        "expected 'PARITY {case_count} cases x 2 modes, 0 failures' in harness output"
+        stdout.contains(&format!("PARITY {case_count} cases, 0 failures")),
+        "expected 'PARITY {case_count} cases, 0 failures' in harness output"
     );
     assert!(
-        stdout.contains(&format!("CACHE_OFF_PARITY {case_count} cases x 2 modes, 0 failures")),
-        "expected 'CACHE_OFF_PARITY {case_count} cases x 2 modes, 0 failures' in harness output"
+        stdout.contains(&format!("CACHE_OFF_PARITY {case_count} cases, 0 failures")),
+        "expected 'CACHE_OFF_PARITY {case_count} cases, 0 failures' in harness output"
+    );
+    assert!(
+        stdout.contains(&format!("LRU_PARITY {case_count} cases, 0 failures")),
+        "expected 'LRU_PARITY {case_count} cases, 0 failures' in harness output"
     );
     assert!(
         stdout.contains(&format!(
@@ -264,13 +247,4 @@ process.exit(failed > 0 || coff > 0 || pfailed > 0 ? 1 : 0);
         "expected 'PREFIX_PARITY {} cases, 0 failures' in harness output",
         prefix_cases.len()
     );
-}
-
-/// The emitted `MC` value from a generated bundle.
-fn mc_of(js: &str) -> String {
-    js.split("const MC=")
-        .nth(1)
-        .and_then(|s| s.split(';').next())
-        .unwrap_or("?")
-        .to_string()
 }

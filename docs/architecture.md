@@ -4,9 +4,10 @@ tw-merge-optimal is a two-stage system:
 
 1. **Build time (Rust)** — `twm-gen` scans a project, derives conflict groups from
    CSS, and emits a tiny JS module. All the heavy lifting happens here.
-2. **Runtime (generated JS)** — the emitted `twMerge`/`twJoin` module does O(1)
-   table lookups over a dependency-free, browser-ready bundle. No Tailwind
-   parser, no config, no WASM.
+2. **Runtime (generated JS)** — the emitted `twMerge`/`twMergeJoin`/`twJoin`
+   module resolves every class through a pattern matcher over a
+   **family-guarded** pattern table — dependency-free, browser-ready. No
+   Tailwind parser, no config, no WASM.
 
 This document walks the build-time pipeline module by module. The generated
 runtime is documented in [runtime.md](runtime.md); the value validators in
@@ -19,7 +20,7 @@ sources ──► scan.rs ──► candidate.rs ──► utility.rs ──► 
                │          │                │               │                │
 vendor CSS ────┼──────────┼────────────────┼───────────────┴────────────────┤
    theme.css ──┼──► css.rs ──► theme.rs ────┤                                 │
-builtin-utilities.css ───► css.rs ─► DesignSystem ──► patterns.rs (optional) ─┘
+builtin-utilities.css ───► css.rs ─► DesignSystem ──► patterns.rs ────────────┘
 ```
 
 | Stage | Module | What it does |
@@ -30,9 +31,9 @@ builtin-utilities.css ───► css.rs ─► DesignSystem ──► patterns
 | Resolve | `utility.rs` | Candidate → CSS properties, via `--value(...)` markers |
 | Validate | `values.rs` | Value-type validators (truth tables ported from tailwind-merge) |
 | Group | `families.rs` | Property → family mapping + directed conflict edges |
-| Conflict | `conflict.rs` | Candidate → (own family, conflict set) table |
-| Patterns | `patterns.rs` | Full design-system grammar for unseen classes (optional mode) |
-| Generate | `generate.rs` | Emit the minimal JS bundle |
+| Conflict | `conflict.rs` | Candidate → family list; in the bundler path this decides the family guard |
+| Patterns | `patterns.rs` | Full design-system grammar, plus the family-guarded variant the bundler path ships |
+| Generate | `generate.rs` | Emit the minimal matcher-only JS bundle |
 | Merge | `merge.rs` | Rust reference implementation of `twMerge`/`twJoin` |
 
 ## 1. Scanning — `scan.rs`
@@ -145,7 +146,8 @@ defines the two inputs to that rule:
 
 ## 7. Conflict table — `conflict.rs`
 
-`ConflictTable` is the heart of the build. For every used class it stores:
+`ConflictTable` is built from the scanned classes (`from_classes`). For every
+used class it stores:
 
 - `entries`: base name → `ClassKey { family, conflict_ids }`, where
   `conflict_ids` = own family + families of generated properties + directed
@@ -153,15 +155,15 @@ defines the two inputs to that rule:
 - `postfix_entries`: `text-lg/` and `@container/` variants that change the
   key (`text-lg/7` additionally conflicts with `leading-*`; a named
   container resolves to the `container-named` family),
-- `arb_fallbacks`: `p-` → key for arbitrary values (`p-[10px]`),
-- feature flags: `needs_sort_modifiers`, `needs_important`, `needs_postfix`
-  — the runtime helpers are emitted **only if the project uses them**.
+- `arb_fallbacks`: `p-` → key for arbitrary values (`p-[10px]`).
 
-In patterns mode, `from_classes_seeded` pre-seeds the family list from the
-pattern table so the exact table and the pattern table share one family
-numbering.
+Its main job in the matcher-only design is **the family guard**: the sorted
+`family_names` list (every family a scanned class can land in, including all
+conflict-edge targets — the closure comes for free, because a class that
+conflicts with a side family is itself in that family list) is what the
+bundler path passes to `PatternTable::from_design_system_guarded`.
 
-## 8. Pattern table — `patterns.rs` (optional mode)
+## 8. Pattern table — `patterns.rs`
 
 `PatternTable` encodes the *entire* design-system grammar — every utility
 name, wildcard, keyword, theme set and value type — so the generated JS can
@@ -176,19 +178,43 @@ Items are encoded as **small integers** to keep the bundle small:
 
 Families are deduplicated into conflict sets (`W2`, referenced by index).
 
+There are two construction paths:
+
+- `from_design_system(ds)` — the **full, unguarded** table, used by the
+  checked-in no-bundler bundles (`full.mjs`, the `./pattern` sub-import).
+- `from_design_system_guarded(ds, used)` — the **family-guarded** table the
+  bundler path ships: only the alternatives whose own family is in `used`
+  are kept, family ids are compacted to the used families, conflict sets
+  drop ids of unused families (sound: a kept class can never conflict with a
+  family no class resolves to), and everything else (keywords, theme sets,
+  the property table, postfix specials) is filtered to what the kept
+  records reference. The guard is **closed over the postfix specials**:
+  `font-size` pulls in `leading`, `container-type` pulls in
+  `container-named`, so unseen `text-*/7` and `@container/[name]` classes
+  still resolve with their special conflicts.
+
 ## 9. Generation — `generate.rs`
 
-`generate_js()` emits a dependency-free ESM module. The bundle layout is
-described in [runtime.md](runtime.md); the key design points:
+`generate_js(&table, &GenerateOptions { prefix, plugin, extend })` emits a
+dependency-free ESM module. The bundle layout is described in
+[runtime.md](runtime.md); the key design points:
 
-- every table is emitted as **static data** (`G`, `W`, `P`, `TH`, …),
-  prototype-less objects where a fast `in` check is used,
-- runtime helpers are **feature-flagged** (`A` postfix, `B` important,
-  `C` arbitrary fallback, `D` patterns mode) and ship only when needed,
+- every table is emitted as **static data** (`W`, `FN`, `PR`, `W2`, `TH`,
+  `KW`, `P`, `BI`, …), prototype-less objects where a fast `in` check is
+  used,
+- there is exactly **one runtime shape** — matcher-only: no `G` table, no
+  feature flags; postfix, important and arbitrary values are always parsed
+  and every class resolves through the matcher `m()` (indexed by the `BI`
+  leading-segment table),
 - `twMerge` (single-string), `twMergeJoin` (variadic) and `twJoin` always
-  ship, sharing one merge body and one result memo,
-- exact mode emits only the scanned classes; patterns mode additionally
-  embeds the pattern tables and the `m()` matcher.
+  ship, sharing one merge body and one Map-based LRU result memo,
+- the short-input fast path threshold is the **constant `MC=7`** (no class
+  pair shorter than 7 chars can conflict),
+- the postfix-special ids (`LD`/`FS`/`CT`/`CN`) ship only when those
+  families exist in the (guarded or full) table; the `--extend` variant adds
+  the runtime config API plus overlay machinery whose tables (`XO`/`XKW`/
+  `XC`/`OW`) are always empty — build-time `--config` compiles straight into
+  the pattern table.
 
 ## 10. Reference merge — `merge.rs`
 
@@ -206,11 +232,13 @@ corpus in `tests/js_parity.rs` and `tests/merge_corpus.rs`).
 
 `twm-gen` wires the pipeline together:
 
-1. build the design system (default, plus `--css` if given),
+1. build the design system (default, plus `--css`/`--config` if given),
 2. collect paths (files / directories / globs) and scan candidates,
 3. `--check` → `run_check()`: simulate the merge right-to-left over all
    occurrences, report every dropped class with `path:line:column`, exit 1,
-4. otherwise build the conflict table (seeded from the pattern table in
-   patterns mode) and emit the JS to `--out` or stdout.
+4. otherwise build the conflict table, take its `family_names` as the guard,
+   build the family-guarded pattern table
+   (`PatternTable::from_design_system_guarded`) and emit the JS to `--out`
+   or stdout.
 
 Every flag is documented in [cli.md](cli.md) and in `--help`.
