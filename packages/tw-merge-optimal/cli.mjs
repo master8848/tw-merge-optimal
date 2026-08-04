@@ -4,6 +4,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const THIS_DIR = dirname(fileURLToPath(import.meta.url));
+const WASI_RUNNER = fileURLToPath(new URL('./wasi-runner.mjs', import.meta.url));
+const WASM_BIN = join(THIS_DIR, 'bin', 'twm-gen.wasm');
 
 export const USAGE = `tw-merge-optimal
 
@@ -23,10 +25,11 @@ OPTIONS
   -h, --help       show this help
 
 ENVIRONMENT
-  TWM_GEN_BIN      path to the twm-gen binary (overrides auto-detection)
-
-The binary is resolved from the workspace Cargo.toml (target/release or
-target/debug); if missing, build it with: cargo build -p twm-gen --release`;
+  TWM_GEN_WASM     path to a twm-gen WASI module (bin/twm-gen.wasm is used
+                   automatically if present — build it with: npm run build:wasm)
+  TWM_GEN_BIN      path to a native twm-gen binary (fallback when no WASM is
+                   available; resolved like before: workspace target/, or the
+                   postinstall download under bin/)`;
 
 function workspaceRoot() {
     let dir = THIS_DIR;
@@ -59,13 +62,39 @@ export function findBinary() {
     const downloaded = join(THIS_DIR, 'bin', `twm-gen-${process.platform}-${process.arch}${ext}`);
     if (existsSync(downloaded)) return downloaded;
     throw new Error(
-        'tw-merge-optimal: cannot locate the twm-gen binary.\n' +
-            '  The postinstall script downloads a prebuilt binary from GitHub Releases — ' +
-            're-run `npm install` (or `npm rebuild tw-merge-optimal`) to retry, or use one of:\n' +
+        'tw-merge-optimal: cannot locate a twm-gen engine.\n' +
+            '  The WASM build (bin/twm-gen.wasm) is preferred — build it with:\n' +
+            '    npm run build:wasm\n' +
+            '  or use a native binary via one of:\n' +
             '  - set TWM_GEN_BIN=/path/to/twm-gen\n' +
-            '  - build it yourself: cargo build -p twm-gen --release\n' +
-            '  - offline? set TWM_GEN_REPO and download the release asset manually.'
+            '  - re-run npm install (postinstall downloads a prebuilt binary from GitHub Releases)\n' +
+            '  - build it yourself: cargo build -p twm-gen --release'
     );
+}
+
+export function findEngine() {
+    const wasmPath = process.env.TWM_GEN_WASM || (existsSync(WASM_BIN) ? WASM_BIN : null);
+    if (wasmPath) return { kind: 'wasm', path: wasmPath };
+    return { kind: 'native', path: findBinary() };
+}
+
+export function runEngine(args, options = {}) {
+    const engine = findEngine();
+    return runWith(engine, args, options);
+}
+
+export function runWith(engine, args, options = {}) {
+    if (engine.kind === 'wasm') {
+        const flags =
+            Number(process.versions.node.split('.')[0]) <= 18
+                ? ['--experimental-wasi-unstable-preview1']
+                : [];
+        return spawnSync(process.execPath, [...flags, WASI_RUNNER, engine.path, ...args], {
+            encoding: 'utf8',
+            ...options,
+        });
+    }
+    return spawnSync(engine.path, args, { encoding: 'utf8', ...options });
 }
 
 export function defaultOut() {
@@ -103,7 +132,7 @@ export function generate(options = {}) {
         prefix,
         patterns,
         check,
-        binary = findBinary(),
+        engine,
     } = options;
 
     const args = [];
@@ -118,7 +147,7 @@ export function generate(options = {}) {
 
     if (out) mkdirSync(dirname(out), { recursive: true });
 
-    const result = spawnSync(binary, args, { encoding: 'utf8' });
+    const result = engine ? runWith(engine, args) : runEngine(args);
     const stderr = result.stderr ?? '';
     const status = result.status ?? -1;
 
@@ -147,8 +176,7 @@ export function runCli(argv = process.argv.slice(2)) {
         process.stdout.write(USAGE + '\n');
         return 0;
     }
-    const binary = findBinary();
-    const result = spawnSync(binary, argv, { stdio: 'inherit' });
+    const result = runEngine(argv, { stdio: 'inherit' });
     return result.status ?? 1;
 }
 

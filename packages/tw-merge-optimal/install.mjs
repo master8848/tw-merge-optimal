@@ -1,7 +1,8 @@
-// postinstall: download the prebuilt twm-gen binary for this platform from
-// GitHub Releases so users never need a Rust toolchain. Skips when a binary
-// is already available (TWM_GEN_BIN env, or a cargo-built binary in the
-// source workspace). Failures warn and exit 0 — `findBinary` reports the
+// postinstall: prefer the WASM build (bin/twm-gen.wasm) when present;
+// otherwise download the prebuilt twm-gen native binary for this platform
+// from GitHub Releases so users never need a Rust toolchain. Skips when a
+// binary is already available (TWM_GEN_BIN env, or a cargo-built binary in
+// the source workspace). Failures warn and exit 0 — `findBinary` reports the
 // actionable error at build time.
 import { existsSync, mkdirSync, createWriteStream } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -77,6 +78,10 @@ async function main() {
     }
     if (process.env.TWM_GEN_BIN && existsSync(process.env.TWM_GEN_BIN)) {
         console.log(`tw-merge-optimal: TWM_GEN_BIN set to ${process.env.TWM_GEN_BIN}`);
+        process.exit(0);
+    }
+    if (existsSync(join(THIS_DIR, 'bin', 'twm-gen.wasm'))) {
+        console.log('tw-merge-optimal: using WASM build (bin/twm-gen.wasm) — no binary download needed');
         process.exit(0);
     }
 

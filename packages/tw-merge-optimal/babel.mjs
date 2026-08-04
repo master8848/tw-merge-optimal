@@ -1,7 +1,6 @@
-import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { DEFAULT_SOURCES, defaultOut, findBinary } from './cli.mjs';
+import { DEFAULT_SOURCES, defaultOut, runEngine } from './cli.mjs';
 
 let done = false;
 
@@ -12,7 +11,7 @@ export function twMergeOptimalBabel(options = {}) {
             if (done && !options.force) return;
             const out = options.out ?? defaultOut();
             mkdirSync(dirname(out), { recursive: true });
-            const result = spawnSync(findBinary(), [
+            const result = runEngine([
                 '--out',
                 out,
                 ...(options.css ? ['--css', options.css] : []),
